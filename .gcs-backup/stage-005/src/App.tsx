@@ -4,7 +4,6 @@ import Hero from "./sections/Hero";
 import Problem from "./sections/Problem";
 import Process from "./sections/Process";
 import WhatWeBuild from "./sections/WhatWeBuild";
-import AIMenuScanner from "./sections/AIMenuScanner";
 import WhyUs from "./sections/WhyUs";
 import CaseStudies from "./sections/CaseStudies";
 import Pricing from "./sections/Pricing";
@@ -21,7 +20,6 @@ function App() {
           <Problem />
           <Process />
           <WhatWeBuild />
-          <AIMenuScanner />
           <WhyUs />
           <CaseStudies />
           <Pricing />
