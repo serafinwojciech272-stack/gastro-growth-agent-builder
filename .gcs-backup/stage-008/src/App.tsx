@@ -7,7 +7,6 @@ import WhatWeBuild from "./sections/WhatWeBuild";
 import AIMenuScanner from "./sections/AIMenuScanner";
 import HealthScore from "./sections/HealthScore";
 import MultiStepForm from "./sections/MultiStepForm";
-import Testimonials from "./sections/Testimonials";
 import WhyUs from "./sections/WhyUs";
 import CaseStudies from "./sections/CaseStudies";
 import Pricing from "./sections/Pricing";
@@ -25,7 +24,6 @@ function App() {
           <WhatWeBuild />
           <AIMenuScanner />
           <HealthScore />
-          <Testimonials />
           <MultiStepForm />
           <WhyUs />
           <CaseStudies />

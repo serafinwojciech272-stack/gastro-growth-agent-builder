@@ -5,12 +5,10 @@ import Problem from "./sections/Problem";
 import Process from "./sections/Process";
 import WhatWeBuild from "./sections/WhatWeBuild";
 import AIMenuScanner from "./sections/AIMenuScanner";
-import HealthScore from "./sections/HealthScore";
-import MultiStepForm from "./sections/MultiStepForm";
-import Testimonials from "./sections/Testimonials";
 import WhyUs from "./sections/WhyUs";
 import CaseStudies from "./sections/CaseStudies";
 import Pricing from "./sections/Pricing";
+import FinalCTA from "./sections/FinalCTA";
 import Footer from "./components/Footer";
 
 function App() {
@@ -24,16 +22,15 @@ function App() {
           <Process />
           <WhatWeBuild />
           <AIMenuScanner />
-          <HealthScore />
-          <Testimonials />
-          <MultiStepForm />
           <WhyUs />
           <CaseStudies />
           <Pricing />
+          <FinalCTA />
         </main>
         <Footer />
       </div>
     </LanguageProvider>
   );
 }
+
 export default App;
