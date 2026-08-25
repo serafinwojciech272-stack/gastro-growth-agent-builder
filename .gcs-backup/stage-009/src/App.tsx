@@ -6,7 +6,6 @@ import Process from "./sections/Process";
 import WhatWeBuild from "./sections/WhatWeBuild";
 import AIMenuScanner from "./sections/AIMenuScanner";
 import HealthScore from "./sections/HealthScore";
-import DashboardPreview from "./sections/DashboardPreview";
 import MultiStepForm from "./sections/MultiStepForm";
 import Testimonials from "./sections/Testimonials";
 import WhyUs from "./sections/WhyUs";
@@ -26,7 +25,6 @@ function App() {
           <WhatWeBuild />
           <AIMenuScanner />
           <HealthScore />
-          <DashboardPreview />
           <Testimonials />
           <MultiStepForm />
           <WhyUs />
