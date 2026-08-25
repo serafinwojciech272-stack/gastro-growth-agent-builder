@@ -1,4 +1,4 @@
-export type Language = 'de' | 'en' | 'pl';
+﻿export type Language = 'de' | 'en' | 'pl';
 
 export const translations = {
   de: {
@@ -423,13 +423,13 @@ export const translations = {
       process: 'Proces',
       technology: 'Technologia',
       insights: 'Blog',
-      cta: 'Rozpocznij projekt',
+      cta: 'Kostenlose Analyse',
     },
     hero: {
       eyebrow: 'DIGITAL ENGINEERING / NIEMCY',
       headline: 'Systemy cyfrowe. Zbudowane dla wzrostu.',
       subheadline: 'Wysokowydajne strony, platformy e-commerce i inteligentna infrastruktura cyfrowa dla ambitnych firm.',
-      ctaPrimary: 'Rozpocznij projekt',
+      ctaPrimary: 'Kostenlose Analyse',
       ctaSecondary: 'Zobacz realizacje',
     },
     problem: {
@@ -611,7 +611,7 @@ export const translations = {
     finalCta: {
       headline: 'Zbudujmy coś warte utrzymania.',
       subheadline: 'Powiedz nam, co Twój biznes potrzebuje poprawić. Zmapujemy problem, architekturę i kolejny krok.',
-      ctaPrimary: 'Rozpocznij projekt',
+      ctaPrimary: 'Kostenlose Analyse',
       ctaSecondary: 'Umów discovery call',
     },
     footer: {
