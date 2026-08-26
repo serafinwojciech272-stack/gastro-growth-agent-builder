@@ -20,8 +20,6 @@ import GrowthRoadmap from "./sections/GrowthRoadmap";
 import FinalCTAEnhanced from "./sections/FinalCTAEnhanced";
 import Footer from "./components/Footer";
 import SocialProof from "./sections/SocialProof";
-import NewsletterSignup from "./sections/NewsletterSignup";
-import FooterLinks from "./sections/FooterLinks";
 
 function App() {
   return (
@@ -48,8 +46,6 @@ function App() {
           <GrowthRoadmap />
           <FinalCTAEnhanced />
           <SocialProof />
-          <NewsletterSignup />
-          <FooterLinks />
         </main>
         <Footer />
       </div>
