@@ -35,7 +35,6 @@ import CustomerJourney from "./sections/CustomerJourney";
 import AutomationRules from "./sections/AutomationRules";
 import APIIntegration from "./sections/APIIntegration";
 import TeamMembers from "./sections/TeamMembers";
-import OnboardingWizard from "./sections/OnboardingWizard";
 
 function App() {
   return (
@@ -76,7 +75,6 @@ function App() {
           <AutomationRules />
           <APIIntegration />
           <TeamMembers />
-          <OnboardingWizard />
         </main>
         <Footer />
       </div>

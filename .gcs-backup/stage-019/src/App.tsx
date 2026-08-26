@@ -1,4 +1,3 @@
-import React from "react";
 import { LanguageProvider } from "./context/LanguageContext";
 import Header from "./components/Header";
 import Hero from "./sections/Hero";
@@ -19,23 +18,10 @@ import FAQ from "./sections/FAQ";
 import AdvancedAnalytics from "./sections/AdvancedAnalytics";
 import GrowthRoadmap from "./sections/GrowthRoadmap";
 import FinalCTAEnhanced from "./sections/FinalCTAEnhanced";
+import Footer from "./components/Footer";
 import SocialProof from "./sections/SocialProof";
 import NewsletterSignup from "./sections/NewsletterSignup";
 import FooterLinks from "./sections/FooterLinks";
-import Footer from "./components/Footer";
-import PricingCalculator from "./sections/PricingCalculator";
-import IntegrationLogos from "./sections/IntegrationLogos";
-import BlogPreview from "./sections/BlogPreview";
-import AIBlogGenerator from "./sections/AIBlogGenerator";
-import SEOChecker from "./sections/SEOChecker";
-import LoadingState from "./sections/LoadingState";
-import ErrorBoundary from "./sections/ErrorBoundary";
-import DarkMode from "./sections/DarkMode";
-import CustomerJourney from "./sections/CustomerJourney";
-import AutomationRules from "./sections/AutomationRules";
-import APIIntegration from "./sections/APIIntegration";
-import TeamMembers from "./sections/TeamMembers";
-import OnboardingWizard from "./sections/OnboardingWizard";
 
 function App() {
   return (
@@ -64,19 +50,6 @@ function App() {
           <SocialProof />
           <NewsletterSignup />
           <FooterLinks />
-          <PricingCalculator />
-          <IntegrationLogos />
-          <BlogPreview />
-          <AIBlogGenerator />
-          <SEOChecker />
-          <LoadingState />
-          <ErrorBoundary />
-          <DarkMode />
-          <CustomerJourney />
-          <AutomationRules />
-          <APIIntegration />
-          <TeamMembers />
-          <OnboardingWizard />
         </main>
         <Footer />
       </div>
