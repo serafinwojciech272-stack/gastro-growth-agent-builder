@@ -17,8 +17,6 @@ import ReviewIntelligence from "./sections/ReviewIntelligence";
 import FAQ from "./sections/FAQ";
 import Footer from "./components/Footer";
 import AdvancedAnalytics from "./sections/AdvancedAnalytics";
-import GrowthRoadmap from "./sections/GrowthRoadmap";
-import FinalCTAEnhanced from "./sections/FinalCTAEnhanced";
 
 function App() {
   return (
@@ -42,8 +40,6 @@ function App() {
           <ReviewIntelligence />
           <FAQ />
           <AdvancedAnalytics />
-          <GrowthRoadmap />
-          <FinalCTAEnhanced />
         </main>
         <Footer />
       </div>

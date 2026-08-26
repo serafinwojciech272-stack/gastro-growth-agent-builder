@@ -1,4 +1,4 @@
-import { LanguageProvider } from "./context/LanguageContext";
+﻿import { LanguageProvider } from "./context/LanguageContext";
 import Header from "./components/Header";
 import Hero from "./sections/Hero";
 import Problem from "./sections/Problem";
@@ -12,13 +12,10 @@ import MultiStepForm from "./sections/MultiStepForm";
 import WhyUs from "./sections/WhyUs";
 import CaseStudies from "./sections/CaseStudies";
 import Pricing from "./sections/Pricing";
+import Footer from "./components/Footer";
 import CompetitorAnalysis from "./sections/CompetitorAnalysis";
 import ReviewIntelligence from "./sections/ReviewIntelligence";
 import FAQ from "./sections/FAQ";
-import Footer from "./components/Footer";
-import AdvancedAnalytics from "./sections/AdvancedAnalytics";
-import GrowthRoadmap from "./sections/GrowthRoadmap";
-import FinalCTAEnhanced from "./sections/FinalCTAEnhanced";
 
 function App() {
   return (
@@ -41,9 +38,6 @@ function App() {
           <CompetitorAnalysis />
           <ReviewIntelligence />
           <FAQ />
-          <AdvancedAnalytics />
-          <GrowthRoadmap />
-          <FinalCTAEnhanced />
         </main>
         <Footer />
       </div>
