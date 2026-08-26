@@ -1,4 +1,4 @@
-﻿import { LanguageProvider } from "./context/LanguageContext";
+import { LanguageProvider } from "./context/LanguageContext";
 import Header from "./components/Header";
 import Hero from "./sections/Hero";
 import Problem from "./sections/Problem";
@@ -14,8 +14,6 @@ import CaseStudies from "./sections/CaseStudies";
 import Pricing from "./sections/Pricing";
 import Footer from "./components/Footer";
 import CompetitorAnalysis from "./sections/CompetitorAnalysis";
-import ReviewIntelligence from "./sections/ReviewIntelligence";
-import FAQ from "./sections/FAQ";
 
 function App() {
   return (
@@ -36,8 +34,6 @@ function App() {
           <CaseStudies />
           <Pricing />
           <CompetitorAnalysis />
-          <ReviewIntelligence />
-          <FAQ />
         </main>
         <Footer />
       </div>
