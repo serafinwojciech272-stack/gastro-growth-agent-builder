@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BarChart3, Bot, CheckCircle2, ChevronRight, CircleAlert, LogOut, Menu, MessageSquareText, PanelLeft, Settings, Sparkles, Utensils, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { requireSupabase } from '../lib/supabase';
 
 const nav = [
   { label: 'Overview', icon: PanelLeft },
@@ -16,9 +17,55 @@ export default function DashboardPage() {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [restaurantName, setRestaurantName] = useState('Your Restaurant');
 
   useEffect(() => {
-    if (!loading && !user) navigate('/login', { replace: true });
+    if (!loading && !user) {
+      navigate('/login', { replace: true });
+      return;
+    }
+    if (!user) return;
+
+    let cancelled = false;
+    async function loadWorkspace() {
+      try {
+        const supabase = requireSupabase();
+        const { data: memberships, error: membershipError } = await supabase
+          .from('organization_members')
+          .select('organization_id')
+          .eq('user_id', user.id)
+          .limit(1);
+        if (membershipError) throw membershipError;
+        const organizationId = memberships?.[0]?.organization_id;
+        if (!organizationId) {
+          if (!cancelled) navigate('/app/onboarding', { replace: true });
+          return;
+        }
+        const { data: restaurant, error: restaurantError } = await supabase
+          .from('restaurants')
+          .select('id,name,onboarding_completed')
+          .eq('organization_id', organizationId)
+          .limit(1)
+          .maybeSingle();
+        if (restaurantError) throw restaurantError;
+        if (!restaurant) {
+          if (!cancelled) navigate('/app/onboarding', { replace: true });
+          return;
+        }
+        if (!restaurant.onboarding_completed) {
+          if (!cancelled) navigate('/app/onboarding', { replace: true });
+          return;
+        }
+        if (!cancelled) setRestaurantName(restaurant.name);
+      } catch (error) {
+        console.error('Workspace loading failed', error);
+      } finally {
+        if (!cancelled) setWorkspaceLoading(false);
+      }
+    }
+    void loadWorkspace();
+    return () => { cancelled = true; };
   }, [loading, user, navigate]);
 
   async function handleSignOut() {
@@ -26,7 +73,7 @@ export default function DashboardPage() {
     navigate('/login', { replace: true });
   }
 
-  if (loading || !user) {
+  if (loading || !user || workspaceLoading) {
     return <div className="min-h-screen bg-[#080809] text-[#f5f5f5] grid place-items-center text-sm text-[#a1a1aa]">Loading workspace...</div>;
   }
 
@@ -40,7 +87,7 @@ export default function DashboardPage() {
           </div>
           <div className="rounded-xl border border-[#27272a] bg-[#111113] p-4 mb-6">
             <p className="text-[11px] uppercase tracking-widest text-[#71717a]">Workspace</p>
-            <p className="mt-1 font-medium">Your Restaurant</p>
+            <p className="mt-1 font-medium truncate">{restaurantName}</p>
             <p className="mt-1 truncate text-xs text-[#71717a]">{user.email}</p>
           </div>
           <nav className="space-y-1">
