@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,7 +8,7 @@ const nav = [
   ['Billing','/app/billing'], ['Integrations','/app/integrations'],
 ];
 
-export default function AppShell({ children, title }: { children: React.ReactNode; title?: string }) {
+export default function AppShell({ children, title }: { children: ReactNode; title?: string }) {
   const { signOut, user } = useAuth(); const navigate = useNavigate();
   const logout = async () => { await signOut(); navigate('/login'); };
   return <div className="min-h-screen bg-[#09090b] text-zinc-100">
