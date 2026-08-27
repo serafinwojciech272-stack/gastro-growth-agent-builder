@@ -1,4 +1,5 @@
 import React from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { LanguageProvider } from "./context/LanguageContext";
 import Header from "./components/Header";
 import Hero from "./sections/Hero";
@@ -36,8 +37,10 @@ import AutomationRules from "./sections/AutomationRules";
 import APIIntegration from "./sections/APIIntegration";
 import TeamMembers from "./sections/TeamMembers";
 import OnboardingWizard from "./sections/OnboardingWizard";
+import AuthPage from "./pages/AuthPage";
+import DashboardPage from "./pages/DashboardPage";
 
-function App() {
+function PublicSite() {
   return (
     <LanguageProvider>
       <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -83,4 +86,15 @@ function App() {
     </LanguageProvider>
   );
 }
-export default App;
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<PublicSite />} />
+      <Route path="/login" element={<AuthPage />} />
+      <Route path="/signup" element={<AuthPage />} />
+      <Route path="/app/dashboard" element={<DashboardPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
