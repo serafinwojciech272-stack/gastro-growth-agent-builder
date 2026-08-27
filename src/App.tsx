@@ -41,11 +41,12 @@ import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import AdvisorPage from "./pages/AdvisorPage";
+import MenuPage from "./pages/MenuPage";
 
 function PublicSite() {
   return <LanguageProvider><div className="relative min-h-screen bg-background text-foreground overflow-x-hidden"><Header/><main><Hero/><Problem/><Process/><WhatWeBuild/><AIMenuScanner/><HealthScore/><DashboardPreview/><Testimonials/><MultiStepForm/><WhyUs/><CaseStudies/><Pricing/><CompetitorAnalysis/><ReviewIntelligence/><FAQ/><AdvancedAnalytics/><GrowthRoadmap/><FinalCTAEnhanced/><SocialProof/><NewsletterSignup/><FooterLinks/><PricingCalculator/><IntegrationLogos/><BlogPreview/><AIBlogGenerator/><SEOChecker/><LoadingState/><ErrorBoundary/><DarkMode/><CustomerJourney/><AutomationRules/><APIIntegration/><TeamMembers/><OnboardingWizard/></main><Footer/></div></LanguageProvider>;
 }
 
 export default function App() {
-  return <Routes><Route path="/" element={<PublicSite/>}/><Route path="/login" element={<AuthPage/>}/><Route path="/signup" element={<AuthPage/>}/><Route path="/app/onboarding" element={<OnboardingPage/>}/><Route path="/app/dashboard" element={<DashboardPage/>}/><Route path="/app/advisor" element={<AdvisorPage/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes>;
+  return <Routes><Route path="/" element={<PublicSite/>}/><Route path="/login" element={<AuthPage/>}/><Route path="/signup" element={<AuthPage/>}/><Route path="/app/onboarding" element={<OnboardingPage/>}/><Route path="/app/dashboard" element={<DashboardPage/>}/><Route path="/app/advisor" element={<AdvisorPage/>}/><Route path="/app/menu" element={<MenuPage/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes>;
 }
