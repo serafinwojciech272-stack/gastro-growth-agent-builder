@@ -4,7 +4,7 @@ import type { Language } from '../i18n/translations';
 interface LanguageContextType {
   lang: Language;
   setLang: (lang: Language) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   t: (key: string) => any;
 }
 
@@ -32,7 +32,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const t = useCallback(
     (key: string) => {
       const parts = key.split('.');
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       let value: any = translations[lang];
       for (const part of parts) {
         value = value?.[part];
@@ -49,9 +49,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
+
 export function useLanguage() {
   const ctx = useContext(LanguageContext);
   if (!ctx) throw new Error('useLanguage must be used within LanguageProvider');
   return ctx;
 }
+

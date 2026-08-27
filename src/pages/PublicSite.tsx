@@ -30,7 +30,7 @@ export default function PublicSite() {
     try {
       await saveLead({ email, name: "Public Site Lead" });
       setSubmitted(true);
-    } catch (err) {
+    } catch {
       setError("Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.");
     } finally {
       setLoading(false);
@@ -186,3 +186,4 @@ export default function PublicSite() {
     </div>
   );
 }
+
