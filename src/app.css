@@ -1,0 +1,8 @@
+/* GGA application design system */
+.gga-surface{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.09);box-shadow:0 18px 60px rgba(0,0,0,.22)}
+.gga-focus:focus-visible{outline:2px solid rgb(167 139 250);outline-offset:3px}
+.gga-enter{animation:gga-enter .45s cubic-bezier(.2,.8,.2,1) both}
+@keyframes gga-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.gga-grid{background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:32px 32px}
+@media (max-width:1023px){.gga-mobile-nav{display:flex}.gga-desktop-nav{display:none}}
+@media (prefers-reduced-motion:reduce){.gga-enter{animation:none}}
