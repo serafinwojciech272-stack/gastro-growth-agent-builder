@@ -1,0 +1,15 @@
+﻿node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.local
+
+.supabase/
+supabase/.temp/
+
+.gcs-backup/
+
+*.log
+npm-debug.log*
+.DS_Store
