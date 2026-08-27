@@ -1,6 +1,9 @@
-import ResetPasswordPage from './pages/ResetPasswordPage';
-import React from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+﻿import React, { Suspense, lazy } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import AuthPage from "./pages/AuthPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+
+// Statyczne importy dla strony głównej (natychmiastowe ładowanie)
 import { LanguageProvider } from "./context/LanguageContext";
 import Header from "./components/Header";
 import Hero from "./sections/Hero";
@@ -24,29 +27,78 @@ import FinalCTAEnhanced from "./sections/FinalCTAEnhanced";
 import SocialProof from "./sections/SocialProof";
 import NewsletterSignup from "./sections/NewsletterSignup";
 import FooterLinks from "./sections/FooterLinks";
-import Footer from "./components/Footer";
 import PricingCalculator from "./sections/PricingCalculator";
 import IntegrationLogos from "./sections/IntegrationLogos";
 import BlogPreview from "./sections/BlogPreview";
-import AIBlogGenerator from "./sections/AIBlogGenerator";
-import SEOChecker from "./sections/SEOChecker";
-import LoadingState from "./sections/LoadingState";
-import ErrorBoundary from "./sections/ErrorBoundary";
-import DarkMode from "./sections/DarkMode";
-import CustomerJourney from "./sections/CustomerJourney";
-import AutomationRules from "./sections/AutomationRules";
-import APIIntegration from "./sections/APIIntegration";
-import TeamMembers from "./sections/TeamMembers";
-import OnboardingWizard from "./sections/OnboardingWizard";
-import AuthPage from "./pages/AuthPage";
-import DashboardPage from "./pages/DashboardPage";
-import OnboardingPage from "./pages/OnboardingPage";
-import AdvisorPage from "./pages/AdvisorPage";
-import MenuPage from "./pages/MenuPage";
-import ActionsPage from "./pages/ActionsPage";
-import WorkspaceModulePage from "./pages/WorkspaceModulePage";
+import Footer from "./components/Footer";
 
-function PublicSite() { return <LanguageProvider><div className="relative min-h-screen bg-background text-foreground overflow-x-hidden"><Header/><main><Hero/><Problem/><Process/><WhatWeBuild/><AIMenuScanner/><HealthScore/><DashboardPreview/><Testimonials/><MultiStepForm/><WhyUs/><CaseStudies/><Pricing/><CompetitorAnalysis/><ReviewIntelligence/><FAQ/><AdvancedAnalytics/><GrowthRoadmap/><FinalCTAEnhanced/><SocialProof/><NewsletterSignup/><FooterLinks/><PricingCalculator/><IntegrationLogos/><BlogPreview/><AIBlogGenerator/><SEOChecker/><LoadingState/><ErrorBoundary/><DarkMode/><CustomerJourney/><AutomationRules/><APIIntegration/><TeamMembers/><OnboardingWizard/></main><Footer/></div></LanguageProvider>; }
+// Lazy load dla ciężkich stron aplikacji (Code Splitting)
+const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const AdvisorPage = lazy(() => import("./pages/AdvisorPage"));
+const MenuPage = lazy(() => import("./pages/MenuPage"));
+const ActionsPage = lazy(() => import("./pages/ActionsPage"));
+const WorkspaceModulePage = lazy(() => import("./pages/WorkspaceModulePage"));
 
-export default function App() { return <Routes><Route path="/" element={<PublicSite/>}/><Route path="/login" element={<AuthPage/>}/><Route path="/signup" element={<AuthPage/>}/><Route path="/app/onboarding" element={<OnboardingPage/>}/><Route path="/app/dashboard" element={<DashboardPage/>}/><Route path="/app/advisor" element={<AdvisorPage/>}/><Route path="/app/menu" element={<MenuPage/>}/><Route path="/app/actions" element={<ActionsPage/>}/><Route path="/app/:module" element={<WorkspaceModulePage/>}/><Route path="*" element={<Navigate to="/" replace/>}/>      <Route path="/reset-password" element={<ResetPasswordPage />} />
-    </Routes>; }
+const LoadingFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+  </div>
+);
+
+const PublicSite = () => (
+  <LanguageProvider>
+    <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
+      <Header />
+      <main>
+        <Hero />
+        <Problem />
+        <Process />
+        <WhatWeBuild />
+        <AIMenuScanner />
+        <HealthScore />
+        <DashboardPreview />
+        <Testimonials />
+        <MultiStepForm />
+        <WhyUs />
+        <CaseStudies />
+        <Pricing />
+        <CompetitorAnalysis />
+        <ReviewIntelligence />
+        <FAQ />
+        <AdvancedAnalytics />
+        <GrowthRoadmap />
+        <FinalCTAEnhanced />
+        <SocialProof />
+        <NewsletterSignup />
+        <FooterLinks />
+        <PricingCalculator />
+        <IntegrationLogos />
+        <BlogPreview />
+      </main>
+      <Footer />
+    </div>
+  </LanguageProvider>
+);
+
+export default function App() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <Routes>
+        <Route path="/" element={<PublicSite />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/signup" element={<AuthPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        
+        <Route path="/app/onboarding" element={<OnboardingPage />} />
+        <Route path="/app/dashboard" element={<DashboardPage />} />
+        <Route path="/app/advisor" element={<AdvisorPage />} />
+        <Route path="/app/menu" element={<MenuPage />} />
+        <Route path="/app/actions" element={<ActionsPage />} />
+        <Route path="/app/:module" element={<WorkspaceModulePage />} />
+        
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
+  );
+}
