@@ -4,7 +4,11 @@ import { ArrowRight, LockKeyhole, Mail, UtensilsCrossed } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function AuthPage() {
-  const { configured, loading: authLoading, signIn, signUp } = useAuth();
+  const [isForgotMode, setIsForgotMode] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const { configured, loading: authLoading, signIn, signUp , resetPasswordForEmail } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const initialMode = params.get('mode') === 'signup' ? 'signup' : 'login';
@@ -39,6 +43,16 @@ export default function AuthPage() {
     navigate('/app/dashboard', { replace: true });
   }
 
+  
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetError(null);
+    const { error } = await resetPasswordForEmail(email);
+    setResetLoading(false);
+    if (error) setResetError(error.message);
+    else setResetEmailSent(true);
+  };
   return (
     <main className="min-h-screen bg-[#080809] text-[#f5f5f5] flex items-center justify-center px-5 py-16">
       <div className="w-full max-w-md">
@@ -89,7 +103,53 @@ export default function AuthPage() {
               {busy ? 'Processing...' : mode === 'login' ? 'Sign in' : 'Create account'}
               {!busy && <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />}
             </button>
-          </form>
+          
+        {isForgotMode && (
+          <div className="mt-4 space-y-4">
+            <h2 className="text-xl font-semibold text-white">Reset Password</h2>
+            {resetEmailSent ? (
+              <p className="text-green-400 text-sm">Check your email for the reset link.</p>
+            ) : (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                  placeholder="Email" 
+                  required 
+                  className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600" 
+                />
+                {resetError && <p className="text-red-400 text-sm">{resetError}</p>}
+                <button 
+                  type="submit" 
+                  disabled={resetLoading} 
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg py-2.5"
+                >
+                  {resetLoading ? "Sending..." : "Send Reset Link"}
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => { setIsForgotMode(false); setResetEmailSent(false); setResetError(null); }} 
+                  className="w-full text-sm text-slate-400 hover:text-white"
+                >
+                  Back to Login
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+        {!isForgotMode && (
+          <div className="text-right mt-2">
+            <button 
+              type="button" 
+              onClick={() => setIsForgotMode(true)} 
+              className="text-sm text-purple-400 hover:text-purple-300"
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
+</form>
 
           <div className="mt-6 text-center text-sm text-[#71717a]">
             {mode === 'login' ? 'New to GGA?' : 'Already have an account?'}{' '}
