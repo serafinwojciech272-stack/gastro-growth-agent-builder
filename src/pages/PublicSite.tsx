@@ -1,6 +1,7 @@
 ﻿import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, BarChart3, UtensilsCrossed, Star, Target, CheckCircle2 } from "lucide-react";
+import { ArrowRight, BarChart3, UtensilsCrossed, Star, Target, CheckCircle2, Loader2 } from "lucide-react";
+import { saveLead } from "../services/leadService";
 
 const features = [
   { title: "Umsatzanalyse", desc: "Identifikation von Umsatzpotenzialen in Ihrer Speisekarte und Preisstruktur.", icon: BarChart3 },
@@ -18,11 +19,22 @@ const processSteps = [
 
 export default function PublicSite() {
   const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setLoading(true);
+    setError(null);
+    try {
+      await saveLead({ email, name: "Public Site Lead" });
+      setSubmitted(true);
+    } catch (err) {
+      setError("Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -60,7 +72,7 @@ export default function PublicSite() {
           </p>
           <div className="mt-12 flex flex-col sm:flex-row justify-center gap-4">
             <a href="#lead" className="group bg-gradient-to-r from-purple-600 to-orange-500 text-white px-8 py-4 rounded-xl font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
-              Kostenlose Erstanalyse 
+              Kostenlose Erstanalyse
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </a>
             <a href="#features" className="bg-slate-900 text-slate-300 border border-slate-800 px-8 py-4 rounded-xl font-semibold hover:bg-slate-800 transition-colors">
@@ -141,11 +153,16 @@ export default function PublicSite() {
                   placeholder="restaurant@email.de"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-5 py-3.5 text-white text-sm focus:ring-2 focus:ring-purple-600 focus:outline-none transition-all"
                 />
-                <button type="submit" className="bg-gradient-to-r from-purple-600 to-orange-500 text-white px-6 py-3.5 rounded-xl font-semibold hover:opacity-90 transition-opacity whitespace-nowrap flex items-center justify-center gap-2">
-                  Analyse anfordern <ArrowRight size={16} />
+                <button 
+                  type="submit" 
+                  disabled={loading} 
+                  className="bg-gradient-to-r from-purple-600 to-orange-500 text-white px-6 py-3.5 rounded-xl font-semibold hover:opacity-90 transition-opacity whitespace-nowrap flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {loading ? <><Loader2 size={16} className="animate-spin" /> Wird gesendet...</> : <>Analyse anfordern <ArrowRight size={16} /></>}
                 </button>
               </form>
             )}
+            {error && <p className="mt-4 text-red-400 text-sm">{error}</p>}
           </div>
         </div>
       </section>
