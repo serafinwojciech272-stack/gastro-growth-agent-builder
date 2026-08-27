@@ -39,6 +39,7 @@ import TeamMembers from "./sections/TeamMembers";
 import OnboardingWizard from "./sections/OnboardingWizard";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
+import OnboardingPage from "./pages/OnboardingPage";
 
 function PublicSite() {
   return (
@@ -46,40 +47,11 @@ function PublicSite() {
       <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
         <Header />
         <main>
-          <Hero />
-          <Problem />
-          <Process />
-          <WhatWeBuild />
-          <AIMenuScanner />
-          <HealthScore />
-          <DashboardPreview />
-          <Testimonials />
-          <MultiStepForm />
-          <WhyUs />
-          <CaseStudies />
-          <Pricing />
-          <CompetitorAnalysis />
-          <ReviewIntelligence />
-          <FAQ />
-          <AdvancedAnalytics />
-          <GrowthRoadmap />
-          <FinalCTAEnhanced />
-          <SocialProof />
-          <NewsletterSignup />
-          <FooterLinks />
-          <PricingCalculator />
-          <IntegrationLogos />
-          <BlogPreview />
-          <AIBlogGenerator />
-          <SEOChecker />
-          <LoadingState />
-          <ErrorBoundary />
-          <DarkMode />
-          <CustomerJourney />
-          <AutomationRules />
-          <APIIntegration />
-          <TeamMembers />
-          <OnboardingWizard />
+          <Hero /><Problem /><Process /><WhatWeBuild /><AIMenuScanner /><HealthScore /><DashboardPreview />
+          <Testimonials /><MultiStepForm /><WhyUs /><CaseStudies /><Pricing /><CompetitorAnalysis /><ReviewIntelligence />
+          <FAQ /><AdvancedAnalytics /><GrowthRoadmap /><FinalCTAEnhanced /><SocialProof /><NewsletterSignup /><FooterLinks />
+          <PricingCalculator /><IntegrationLogos /><BlogPreview /><AIBlogGenerator /><SEOChecker /><LoadingState />
+          <ErrorBoundary /><DarkMode /><CustomerJourney /><AutomationRules /><APIIntegration /><TeamMembers /><OnboardingWizard />
         </main>
         <Footer />
       </div>
@@ -93,6 +65,7 @@ export default function App() {
       <Route path="/" element={<PublicSite />} />
       <Route path="/login" element={<AuthPage />} />
       <Route path="/signup" element={<AuthPage />} />
+      <Route path="/app/onboarding" element={<OnboardingPage />} />
       <Route path="/app/dashboard" element={<DashboardPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
