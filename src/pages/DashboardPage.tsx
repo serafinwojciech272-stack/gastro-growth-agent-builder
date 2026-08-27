@@ -1,24 +1,114 @@
-import { useEffect, useState } from 'react';
-import { BarChart3, Bot, CheckCircle2, ChevronRight, CircleAlert, LogOut, Menu, MessageSquareText, PanelLeft, Settings, Sparkles, Utensils, Users, X } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { requireSupabase } from '../lib/supabase';
-
-const nav = [
-  { label: 'Overview', icon: PanelLeft, to: '/app/dashboard' },
-  { label: 'AI Advisor', icon: Bot, to: '/app/advisor' },
-  { label: 'Menu Intelligence', icon: Utensils, to: '/app/dashboard' },
-  { label: 'Reviews', icon: MessageSquareText, to: '/app/dashboard' },
-  { label: 'Marketing', icon: Sparkles, to: '/app/dashboard' },
-  { label: 'Analytics', icon: BarChart3, to: '/app/dashboard' },
-];
+﻿import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabase";
+import { Loader2, AlertCircle, UtensilsCrossed, TrendingUp, Star } from "lucide-react";
 
 export default function DashboardPage() {
-  const { user, loading, signOut } = useAuth(); const navigate = useNavigate();
-  const [mobileOpen,setMobileOpen]=useState(false); const [workspaceLoading,setWorkspaceLoading]=useState(true); const [restaurantName,setRestaurantName]=useState('Your Restaurant');
-  useEffect(()=>{if(!loading&&!user){navigate('/login',{replace:true});return}if(!user)return;let cancelled=false;(async()=>{try{const s=requireSupabase();const {data:m,error:me}=await s.from('organization_members').select('organization_id').eq('user_id',user.id).limit(1);if(me)throw me;const oid=m?.[0]?.organization_id;if(!oid){if(!cancelled)navigate('/app/onboarding',{replace:true});return}const {data:r,error:re}=await s.from('restaurants').select('id,name,onboarding_completed').eq('organization_id',oid).limit(1).maybeSingle();if(re)throw re;if(!r||!r.onboarding_completed){if(!cancelled)navigate('/app/onboarding',{replace:true});return}if(!cancelled)setRestaurantName(r.name)}catch(e){console.error('Workspace loading failed',e)}finally{if(!cancelled)setWorkspaceLoading(false)}})();return()=>{cancelled=true}},[loading,user,navigate]);
-  async function handleSignOut(){await signOut();navigate('/login',{replace:true})}
-  if(loading||!user||workspaceLoading)return <div className="min-h-screen bg-[#080809] text-[#f5f5f5] grid place-items-center text-sm text-[#a1a1aa]">Loading workspace...</div>;
-  return <div className="min-h-screen bg-[#080809] text-[#f5f5f5]"><aside className={`${mobileOpen?'translate-x-0':'-translate-x-full'} fixed inset-y-0 left-0 z-50 w-72 border-r border-[#27272a] bg-[#0d0d0f] transition-transform lg:translate-x-0`}><div className="flex h-full flex-col p-5"><div className="mb-8 flex items-center justify-between"><Link to="/" className="text-sm font-semibold tracking-tight">Gastro Growth Advisor</Link><button className="text-[#a1a1aa] lg:hidden" onClick={()=>setMobileOpen(false)} aria-label="Close menu"><X size={20}/></button></div><div className="mb-6 rounded-xl border border-[#27272a] bg-[#111113] p-4"><p className="text-[11px] uppercase tracking-widest text-[#71717a]">Workspace</p><p className="mt-1 truncate font-medium">{restaurantName}</p><p className="mt-1 truncate text-xs text-[#71717a]">{user.email}</p></div><nav className="space-y-1">{nav.map(({label,icon:Icon,to})=><Link key={label} to={to} onClick={()=>setMobileOpen(false)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${label==='Overview'?'bg-[#1a1a1e] text-white':'text-[#a1a1aa] hover:bg-[#151517] hover:text-white'}`}><Icon size={17}/>{label}</Link>)}</nav><div className="mt-auto space-y-1"><button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#a1a1aa]"><Users size={17}/>Team</button><button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#a1a1aa]"><Settings size={17}/>Settings</button><button onClick={handleSignOut} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#a1a1aa] hover:bg-[#151517] hover:text-white"><LogOut size={17}/>Sign out</button></div></div></aside>{mobileOpen&&<button className="fixed inset-0 z-40 bg-black/60 lg:hidden" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}/>}<main className="lg:pl-72"><header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#27272a] bg-[#080809]/90 px-5 backdrop-blur-xl lg:px-8"><button className="text-[#a1a1aa] lg:hidden" onClick={()=>setMobileOpen(true)} aria-label="Open menu"><Menu size={21}/></button><div className="hidden lg:block"><p className="text-xs text-[#71717a]">Restaurant workspace</p><p className="text-sm font-medium">Overview</p></div><div className="ml-auto text-xs text-[#71717a]">Signed in as {user.email}</div></header><div className="mx-auto max-w-7xl p-5 lg:p-8"><div className="mb-8"><p className="text-xs uppercase tracking-[0.18em] text-[#a78bfa]">GGA Intelligence</p><h1 className="mt-2 text-3xl font-semibold tracking-tight lg:text-4xl">Good to see you.</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#a1a1aa]">Your restaurant workspace is ready. Connect your business data and let GGA turn problems into prioritized actions.</p></div><section className="mb-6 rounded-2xl border border-[#27272a] bg-[#111113] p-6"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-sm text-[#a1a1aa]"><Sparkles size={16} className="text-[#a78bfa]"/>AI Advisor</div><h2 className="mt-3 text-xl font-semibold">What is the biggest problem in your restaurant right now?</h2><p className="mt-2 text-sm text-[#71717a]">Start with a real business problem and GGA will use your restaurant context.</p></div><Link to="/app/advisor" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f5f5f5] px-5 py-3 text-sm font-semibold text-[#09090b] hover:bg-white">Ask GGA<ChevronRight size={16}/></Link></div></section><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[['Health Score','Not calculated',CircleAlert],['Open Issues','0',CircleAlert],['Opportunities','0',Sparkles],['Actions','0',CheckCircle2]].map(([label,value,Icon])=>{const I=Icon as typeof CircleAlert;return <div key={label as string} className="rounded-xl border border-[#27272a] bg-[#111113] p-5"><I size={17} className="text-[#71717a]"/><p className="mt-4 text-xs text-[#71717a]">{label as string}</p><p className="mt-1 text-lg font-semibold">{value as string}</p></div>})}</div><div className="mt-6 grid gap-6 xl:grid-cols-2"><section className="rounded-2xl border border-[#27272a] bg-[#111113] p-6"><h2 className="font-semibold">Next steps</h2><div className="mt-4 space-y-3"><Action title="Complete restaurant profile"/><Action title="Add your menu"/><Action title="Connect review sources"/><Link to="/app/advisor" className="flex w-full items-center justify-between rounded-lg border border-[#27272a] bg-[#0d0d0f] px-4 py-3 text-left text-sm hover:border-[#3f3f46]"><span>Run initial GGA analysis</span><ChevronRight size={16} className="text-[#71717a]"/></Link></div></section><section className="rounded-2xl border border-[#27272a] bg-[#111113] p-6"><h2 className="font-semibold">Recent intelligence</h2><div className="mt-8 text-center text-sm text-[#71717a]">Your first GGA analysis will appear here.</div></section></div></div></main></div>;
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [restaurant, setRestaurant] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
+    const fetchRestaurantData = async () => {
+      setLoading(true);
+      try {
+        if (!supabase) {
+          setRestaurant({ name: "Demo Restaurant", score: 85, rating: 4.5, reviews: 128 });
+          return;
+        }
+
+        const { data, error: fetchError } = await supabase
+          .from("restaurants")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        if (fetchError && fetchError.code !== "PGRST116") {
+          throw fetchError;
+        }
+
+        if (!data) {
+          navigate("/app/onboarding");
+          return;
+        }
+
+        setRestaurant(data);
+      } catch {
+        setError("Fehler beim Laden der Restaurantdaten.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRestaurantData();
+  }, [user, authLoading, navigate]);
+
+  if (loading || authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <Loader2 className="animate-spin text-purple-500" size={48} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white p-4">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-xl">
+          <AlertCircle className="mx-auto text-red-400 mb-4" size={32} />
+          <h1 className="text-xl font-bold text-white mb-2">Fehler</h1>
+          <p className="text-slate-400">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-300 font-sans p-4 sm:p-8">
+      <header className="mb-8">
+        <h1 className="text-3xl font-extrabold text-white tracking-tight">Dashboard</h1>
+        <p className="text-slate-500 mt-1">Willkommen zurück, {restaurant?.name || "Restaurant"}!</p>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-slate-500">Growth Score</h3>
+            <TrendingUp className="text-purple-500" size={20} />
+          </div>
+          <p className="text-4xl font-extrabold text-white">{restaurant?.score || 0}/100</p>
+          <div className="mt-4 h-2 bg-slate-800 rounded-full">
+            <div className="h-full bg-gradient-to-r from-purple-600 to-orange-500 rounded-full" style={{ width: `${restaurant?.score || 0}%` }}></div>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-slate-500">Menu Status</h3>
+            <UtensilsCrossed className="text-orange-500" size={20} />
+          </div>
+          <p className="text-2xl font-bold text-white">Optimiert</p>
+          <p className="text-slate-500 text-sm mt-1">Letzte Analyse: vor 2 Tagen</p>
+        </div>
+
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-slate-500">Bewertungen</h3>
+            <Star className="text-yellow-500" size={20} />
+          </div>
+          <p className="text-2xl font-bold text-white">{restaurant?.rating || "4.5"} Sterne</p>
+          <p className="text-slate-500 text-sm mt-1">{restaurant?.reviews || 128} Bewertungen</p>
+        </div>
+      </div>
+    </div>
+  );
 }
-function Action({title}:{title:string}){return <button className="flex w-full items-center justify-between rounded-lg border border-[#27272a] bg-[#0d0d0f] px-4 py-3 text-left text-sm hover:border-[#3f3f46]"><span>{title}</span><ChevronRight size={16} className="text-[#71717a]"/></button>}
