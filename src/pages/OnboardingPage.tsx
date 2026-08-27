@@ -55,8 +55,6 @@ export default function OnboardingPage() {
     setError('');
     try {
       const supabase = requireSupabase();
-      const { data: existing } = await supabase.from('restaurants').select('id').eq('organization_id', '00000000-0000-0000-0000-000000000000').limit(1);
-      void existing;
       const { data: organization, error: organizationError } = await supabase.from('organizations').insert({ name: `${form.restaurantName.trim()} Workspace`, owner_id: user.id }).select('id').single();
       if (organizationError) throw organizationError;
 
@@ -98,9 +96,7 @@ export default function OnboardingPage() {
           <Link to="/" className="inline-flex items-center gap-2 text-sm text-[#a1a1aa] hover:text-white"><UtensilsCrossed size={17} /> Gastro Growth Advisor</Link>
           <span className="text-xs text-[#71717a]">Step {step} of 3</span>
         </div>
-
         <div className="mb-8 flex gap-2">{[1,2,3].map((item) => <div key={item} className={`h-1 flex-1 rounded-full ${item <= step ? 'bg-[#a78bfa]' : 'bg-[#27272a]'}`} />)}</div>
-
         <section className="rounded-2xl border border-[#27272a] bg-[#111113] p-6 sm:p-8">
           <form onSubmit={finish}>
             {step === 1 && <>
@@ -118,14 +114,12 @@ export default function OnboardingPage() {
                 <Field label="Target customer" value={form.targetCustomer} onChange={(v) => update('targetCustomer', v)} placeholder="Families, couples, local professionals" />
               </div>
             </>}
-
             {step === 2 && <>
               <p className="text-xs uppercase tracking-[0.18em] text-[#a78bfa]">Growth objectives</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">What do you want to improve?</h1>
               <p className="mt-2 text-sm text-[#a1a1aa]">Choose every goal relevant to your business.</p>
               <ChoiceGrid values={GOALS} selected={form.goals} onToggle={(v) => toggle('goals', v)} />
             </>}
-
             {step === 3 && <>
               <p className="text-xs uppercase tracking-[0.18em] text-[#a78bfa]">Current problems</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">Where does the restaurant hurt today?</h1>
@@ -133,9 +127,7 @@ export default function OnboardingPage() {
               <ChoiceGrid values={PROBLEMS} selected={form.problems} onToggle={(v) => toggle('problems', v)} />
               <div className="mt-6 rounded-xl border border-[#27272a] bg-[#0d0d0f] p-4 text-sm text-[#a1a1aa]">After setup, GGA will use this profile to generate the first restaurant intelligence workflow.</div>
             </>}
-
             {error && <p role="alert" className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
-
             <div className="mt-8 flex items-center justify-between gap-3">
               <button type="button" disabled={step === 1 || busy} onClick={() => { setError(''); setStep((current) => current - 1); }} className="inline-flex items-center gap-2 rounded-lg border border-[#27272a] px-4 py-3 text-sm text-[#a1a1aa] hover:text-white disabled:opacity-40"><ArrowLeft size={16} /> Back</button>
               {step < 3 ? <button type="button" onClick={next} className="inline-flex items-center gap-2 rounded-lg bg-[#f5f5f5] px-5 py-3 text-sm font-semibold text-[#09090b]">Continue <ArrowRight size={16} /></button> : <button disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-[#f5f5f5] px-5 py-3 text-sm font-semibold text-[#09090b] disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {busy ? 'Creating workspace...' : 'Create restaurant workspace'}</button>}
