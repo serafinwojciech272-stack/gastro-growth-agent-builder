@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     ]);
     if (restaurantError) throw restaurantError;
 
-    const system = `You are the GGA Recommendation Engine. Synthesize existing restaurant intelligence into a prioritized action backlog. Never invent metrics, facts, competitors or customer behavior. Prefer evidence-backed actions. Deduplicate overlapping recommendations. Return JSON only: {"recommendations":[{"source_type":"advisor|menu|reviews|marketing|competitor|seo|analytics","title":string,"problem":string|null,"rationale":string|null,"priority":"critical|high|medium|low","expected_impact":string|null,"confidence":number,"action_payload":object}]}. Confidence must be 0-1. Return at most 20 recommendations.`;
+    const system = `You are the GGA Recommendation Engine. Synthesize existing restaurant intelligence into a prioritized action backlog. Never invent metrics, facts, competitors or customer behavior. Prefer evidence-backed actions. Deduplicate overlapping recommendations. Return JSON only: {"recommendations":[{"source_type":"advisor|menu|reviews|marketing|competitor|seo|analytics","title":string,"problem":string|null,"rationale":string|null,"priority":"critical|high|medium|low","expected_impact":string|null,"confidence":number,"action_payload":object}]}. Confidence must be a percentage from 0 to 100. Return at most 20 recommendations.`;
     const ai = await callOpenRouter({
       task: 'recommendations',
       system,
@@ -91,7 +91,7 @@ function normalizeRecommendations(items: Partial<Recommendation>[]): Recommendat
       rationale: item?.rationale ? String(item.rationale).slice(0, 1200) : null,
       priority: priorities.has(item?.priority as Recommendation['priority']) ? item!.priority as Recommendation['priority'] : 'medium',
       expected_impact: item?.expected_impact ? String(item.expected_impact).slice(0, 500) : null,
-      confidence: Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
+      confidence: Math.max(0, Math.min(100, Number(item?.confidence) || 0)),
       action_payload: item?.action_payload && typeof item.action_payload === 'object' && !Array.isArray(item.action_payload)
         ? item.action_payload as Record<string, unknown>
         : {},
