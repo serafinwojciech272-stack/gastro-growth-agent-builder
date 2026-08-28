@@ -13,6 +13,7 @@ export type OpportunitySignal = {
 
 export type GrowthDecision = {
   primaryOpportunity: OpportunitySignal;
+  rankedOpportunities: OpportunitySignal[];
   recommendedMission: Pick<GrowthMission, "objective" | "expectedImpact" | "confidence">;
   actions: GrowthAction[];
 };
@@ -21,12 +22,12 @@ function clamp(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
+function score(signal: OpportunitySignal): number {
+  return clamp(signal.impactScore) * 0.45 + clamp(signal.confidence * 100) * 0.35 - clamp(signal.effortScore) * 0.2;
+}
+
 export function rankOpportunities(signals: readonly OpportunitySignal[]): OpportunitySignal[] {
-  return [...signals].sort((a, b) => {
-    const scoreA = a.impactScore * 0.45 + a.confidence * 100 * 0.35 - a.effortScore * 0.2;
-    const scoreB = b.impactScore * 0.45 + b.confidence * 100 * 0.35 - b.effortScore * 0.2;
-    return scoreB - scoreA;
-  });
+  return [...signals].sort((a, b) => score(b) - score(a));
 }
 
 export function createGrowthDecision(
@@ -39,17 +40,18 @@ export function createGrowthDecision(
   if (!primary) return null;
 
   const relevantActions = actions.filter((action) =>
-    action.title.toLowerCase().includes(primary.title.toLowerCase().split(" ")[0] ?? ""),
+    primary.relatedKpis.some((kpi) => action.title.toLowerCase().includes(kpi.toLowerCase())),
   );
 
-  const confidence = clamp(primary.confidence * 100);
+  const confidence = clamp(primary.confidence * 100) / 100;
 
   return {
     primaryOpportunity: primary,
+    rankedOpportunities: ranked,
     recommendedMission: {
       objective: primary.title,
       expectedImpact: primary.rationale,
-      confidence: confidence / 100,
+      confidence,
     },
     actions: relevantActions.length > 0 ? relevantActions : actions.slice(0, 3),
   };
