@@ -7,14 +7,18 @@ export type MissionEvent =
   | "START_EXECUTION"
   | "START_MEASUREMENT"
   | "COMPLETE"
+  | "FAIL"
+  | "ESCALATE"
   | "CANCEL";
 
 const transitions: Record<MissionStatus, Partial<Record<MissionEvent, MissionStatus>>> = {
   draft: { SUBMIT_FOR_APPROVAL: "awaiting_approval", CANCEL: "cancelled" },
   awaiting_approval: { APPROVE: "approved", REJECT: "cancelled", CANCEL: "cancelled" },
   approved: { START_EXECUTION: "executing", CANCEL: "cancelled" },
-  executing: { START_MEASUREMENT: "measuring", CANCEL: "cancelled" },
-  measuring: { COMPLETE: "completed" },
+  executing: { START_MEASUREMENT: "measuring", FAIL: "failed", ESCALATE: "human_review", CANCEL: "cancelled" },
+  measuring: { COMPLETE: "completed", FAIL: "failed", ESCALATE: "human_review" },
+  failed: { ESCALATE: "human_review", CANCEL: "cancelled" },
+  human_review: { APPROVE: "approved", CANCEL: "cancelled" },
   completed: {},
   cancelled: {},
 };
