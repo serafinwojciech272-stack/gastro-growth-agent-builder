@@ -1,0 +1,41 @@
+import type { GrowthAction, GrowthDecisionContext, GrowthMission } from "./growthTypes";
+import type { GrowthDecision, OpportunitySignal } from "./growthDecisionEngine";
+import { createGrowthDecision } from "./growthDecisionEngine";
+import { buildGrowthMission, prepareMissionForApproval } from "./missionBuilder";
+
+type OrchestrationInput = {
+  context: GrowthDecisionContext;
+  opportunities: readonly OpportunitySignal[];
+  actions: readonly GrowthAction[];
+  missionId: string;
+  deadline?: string;
+  target?: string;
+};
+
+export type GrowthOrchestrationResult = {
+  decision: GrowthDecision;
+  mission: GrowthMission;
+  requiresApproval: boolean;
+  nextStep: "approval" | "execution";
+};
+
+export function orchestrateGrowthMission(input: OrchestrationInput): GrowthOrchestrationResult | null {
+  const decision = createGrowthDecision(input.context, input.opportunities, input.actions);
+  if (!decision) return null;
+
+  const draft = buildGrowthMission(input.context, decision, {
+    missionId: input.missionId,
+    deadline: input.deadline,
+    target: input.target,
+  });
+
+  const requiresApproval = draft.actions.some((action) => action.requiresApproval);
+  const mission = requiresApproval ? prepareMissionForApproval(draft) : draft;
+
+  return {
+    decision,
+    mission,
+    requiresApproval,
+    nextStep: requiresApproval ? "approval" : "execution",
+  };
+}
