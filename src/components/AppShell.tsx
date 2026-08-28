@@ -1,22 +1,5 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-
-const nav = [
-  ['Dashboard','/app/dashboard'], ['AI Advisor','/app/advisor'], ['Menu','/app/menu'], ['Reviews','/app/reviews'],
-  ['Marketing','/app/marketing'], ['Social Content','/app/social'], ['Actions','/app/actions'], ['Reports','/app/reports'],
-  ['Billing','/app/billing'], ['Integrations','/app/integrations'],
-];
-
-export default function AppShell({ children, title }: { children: ReactNode; title?: string }) {
-  const { signOut, user } = useAuth(); const navigate = useNavigate();
-  const logout = async () => { await signOut(); navigate('/login'); };
-  return <div className="min-h-screen bg-[#09090b] text-zinc-100">
-    <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/10 bg-black/30 p-5 lg:block">
-      <Link to="/app/dashboard" className="flex items-center gap-3 px-2 py-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500 font-black">G</span><span className="font-semibold tracking-tight">Gastro Growth Advisor</span></Link>
-      <nav className="mt-8 space-y-1">{nav.map(([label,path]) => <NavLink key={path} to={path} className={({isActive}) => `block rounded-xl px-3 py-2.5 text-sm transition ${isActive ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`}>{label}</NavLink>)}</nav>
-      <div className="absolute bottom-5 left-5 right-5 border-t border-white/10 pt-4"><div className="truncate px-2 text-xs text-zinc-500">{user?.email}</div><button onClick={logout} className="mt-3 w-full rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:bg-white/5">Sign out</button></div>
-    </aside>
-    <main className="min-h-screen lg:pl-64"><header className="sticky top-0 z-20 border-b border-white/10 bg-[#09090b]/80 px-5 py-4 backdrop-blur-xl md:px-8"><div className="mx-auto flex max-w-7xl items-center justify-between"><div><div className="text-xs uppercase tracking-[0.18em] text-violet-300/70">GGA Workspace</div>{title && <h1 className="mt-1 text-xl font-semibold">{title}</h1>}</div><Link to="/app/advisor" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01]">Ask GGA</Link></div></header><div className="mx-auto max-w-7xl p-5 md:p-8">{children}</div></main>
-  </div>;
-}
+const nav=[['Dashboard','/app/dashboard'],['AI Advisor','/app/advisor'],['Website Vision','/app/website-preview'],['Menu','/app/menu'],['Reviews','/app/reviews'],['Marketing','/app/marketing'],['Social Content','/app/social'],['Actions','/app/actions'],['Reports','/app/reports'],['Billing','/app/billing'],['Integrations','/app/integrations']];
+export default function AppShell({children,title}:{children:ReactNode;title?:string}){const{signOut,user}=useAuth();const navigate=useNavigate();const logout=async()=>{await signOut();navigate('/login')};return <div className="min-h-screen bg-[#09090b] text-zinc-100"><aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/10 bg-black/30 p-5 lg:block"><Link to="/app/dashboard" className="flex items-center gap-3 px-2 py-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500 font-black">G</span><span className="font-semibold tracking-tight">Gastro Growth Advisor</span></Link><nav className="mt-8 space-y-1">{nav.map(([label,path])=><NavLink key={path} to={path} className={({isActive})=>`block rounded-xl px-3 py-2.5 text-sm transition ${isActive?'bg-white/10 text-white':'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`}>{label}</NavLink>)}</nav><div className="absolute bottom-5 left-5 right-5 border-t border-white/10 pt-4"><div className="truncate px-2 text-xs text-zinc-500">{user?.email}</div><button onClick={logout} className="mt-3 w-full rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:bg-white/5">Sign out</button></div></aside><main className="min-h-screen lg:pl-64"><header className="sticky top-0 z-20 border-b border-white/10 bg-[#09090b]/80 px-5 py-4 backdrop-blur-xl md:px-8"><div className="mx-auto flex max-w-7xl items-center justify-between"><div><div className="text-xs uppercase tracking-[0.18em] text-violet-300/70">GGA Workspace</div>{title&&<h1 className="mt-1 text-xl font-semibold">{title}</h1>}</div><Link to="/app/website-preview" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01]">Build website demo</Link></div></header><div className="mx-auto max-w-7xl p-5 md:p-8">{children}</div></main></div>}
