@@ -33,6 +33,7 @@ export type GrowthAction = {
 
 export type GrowthMission = {
   id: string;
+  businessId: string;
   vertical: GrowthVerticalId;
   objective: string;
   baseline?: string;
