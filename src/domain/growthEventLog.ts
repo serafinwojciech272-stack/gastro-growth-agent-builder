@@ -10,6 +10,9 @@ export type GrowthEventType =
   | "mission.measuring"
   | "mission.completed"
   | "mission.cancelled"
+  | "action.started"
+  | "action.completed"
+  | "action.failed"
   | "outcome.recorded";
 
 export type GrowthEvent = {
@@ -38,13 +41,16 @@ export function createMissionEvent(
 ): GrowthEvent {
   const type = eventMap[event];
   if (!type) throw new Error(`No event mapping for ${event}`);
-  return {
-    id: crypto.randomUUID(),
-    missionId: mission.id,
-    type,
-    timestamp: new Date().toISOString(),
-    actor,
-  };
+  return { id: crypto.randomUUID(), missionId: mission.id, type, timestamp: new Date().toISOString(), actor };
+}
+
+export function createActionEvent(
+  missionId: string,
+  actionId: string,
+  type: "action.started" | "action.completed" | "action.failed",
+  metadata?: Record<string, unknown>,
+): GrowthEvent {
+  return { id: crypto.randomUUID(), missionId, type, timestamp: new Date().toISOString(), actor: "system", metadata: { actionId, ...metadata } };
 }
 
 export function createOutcomeEvent(outcome: GrowthOutcome, actor: GrowthEvent["actor"] = "system"): GrowthEvent {
