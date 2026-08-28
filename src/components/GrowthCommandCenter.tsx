@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Bot, BrainCircuit, CheckCircle2, Gauge, ShieldCheck, Sparkles, Target, Zap } from "lucide-react";
+import { ArrowUpRight, Bot, BrainCircuit, Gauge, ShieldCheck, Sparkles, Target, Zap } from "lucide-react";
 
 type Mission = { id: string; title: string; goal: string; priority: number; status: string; approval_status: string; target_value: number | null; baseline_value: number | null; unit: string | null; created_at: string };
 type Action = { id: string; mission_id: string; title: string; description: string | null; status: string; impact_score: number; effort_score: number; risk_level: string; due_at: string | null };
