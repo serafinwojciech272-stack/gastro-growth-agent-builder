@@ -32,13 +32,16 @@ export async function callOpenRouter(params: {
   system: string;
   user: string;
   temperature?: number;
+  selectedModel?: string;
 }): Promise<AiCallResult> {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
 
   let lastError = 'AI provider failed';
   const started = Date.now();
-  const models = modelsFor(params.task);
+  const models = params.selectedModel
+    ? [params.selectedModel, ...modelsFor(params.task).filter((model) => model !== params.selectedModel)]
+    : modelsFor(params.task);
 
   for (let index = 0; index < models.length; index += 1) {
     const model = models[index];
@@ -87,19 +90,11 @@ export async function callOpenRouter(params: {
           }
         : undefined;
 
-      return {
-        model,
-        content: content.trim(),
-        latencyMs: Date.now() - started,
-        attempts: index + 1,
-        usage,
-      };
+      return { model, content: content.trim(), latencyMs: Date.now() - started, attempts: index + 1, usage };
     } catch (error) {
       lastError = error instanceof Error && error.name === 'AbortError'
         ? `AI request timed out after ${TIMEOUT_MS}ms`
-        : error instanceof Error
-          ? error.message
-          : 'Unknown AI provider error';
+        : error instanceof Error ? error.message : 'Unknown AI provider error';
     } finally {
       clearTimeout(timer);
     }
@@ -113,12 +108,7 @@ function numberOrUndefined(value: unknown): number | undefined {
 }
 
 export function parseJson<T = Record<string, unknown>>(raw: string): T {
-  const cleaned = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try {
     return JSON.parse(cleaned) as T;
   } catch {
