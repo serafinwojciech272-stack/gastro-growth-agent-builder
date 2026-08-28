@@ -5,6 +5,7 @@ export type AiCallResult = {
   content: string;
   latencyMs: number;
   attempts: number;
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
 };
 
 const DEFAULTS: Record<AiTask, string> = {
@@ -18,11 +19,12 @@ const DEFAULTS: Record<AiTask, string> = {
 const FALLBACK = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const TIMEOUT_MS = 45_000;
+const MAX_ATTEMPTS = 2;
 
 export function modelsFor(task: AiTask): string[] {
   const primary = Deno.env.get(`GGA_AI_${task.toUpperCase()}_MODEL`) || Deno.env.get('GGA_AI_MODEL') || DEFAULTS[task];
   const fallback = Deno.env.get(`GGA_AI_${task.toUpperCase()}_FALLBACK_MODEL`) || Deno.env.get('GGA_AI_FALLBACK_MODEL') || FALLBACK;
-  return [...new Set([primary, fallback].map((value) => value.trim()).filter(Boolean))];
+  return [...new Set([primary, fallback].map((value) => value.trim()).filter(Boolean))].slice(0, MAX_ATTEMPTS);
 }
 
 export async function callOpenRouter(params: {
@@ -77,11 +79,20 @@ export async function callOpenRouter(params: {
         continue;
       }
 
+      const usage = payload?.usage && typeof payload.usage === 'object'
+        ? {
+            promptTokens: numberOrUndefined(payload.usage.prompt_tokens),
+            completionTokens: numberOrUndefined(payload.usage.completion_tokens),
+            totalTokens: numberOrUndefined(payload.usage.total_tokens),
+          }
+        : undefined;
+
       return {
         model,
         content: content.trim(),
         latencyMs: Date.now() - started,
         attempts: index + 1,
+        usage,
       };
     } catch (error) {
       lastError = error instanceof Error && error.name === 'AbortError'
@@ -95,6 +106,10 @@ export async function callOpenRouter(params: {
   }
 
   throw new Error(lastError);
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 export function parseJson<T = Record<string, unknown>>(raw: string): T {
