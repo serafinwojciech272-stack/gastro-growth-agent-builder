@@ -1,15 +1,6 @@
 import type { GrowthMission, MissionStatus } from "./growthTypes";
 
-export type MissionEvent =
-  | "SUBMIT_FOR_APPROVAL"
-  | "APPROVE"
-  | "REJECT"
-  | "START_EXECUTION"
-  | "START_MEASUREMENT"
-  | "COMPLETE"
-  | "FAIL"
-  | "ESCALATE"
-  | "CANCEL";
+export type MissionEvent = "SUBMIT_FOR_APPROVAL" | "APPROVE" | "REJECT" | "START_EXECUTION" | "START_MEASUREMENT" | "COMPLETE" | "FAIL" | "ESCALATE" | "CANCEL";
 
 const transitions: Record<MissionStatus, Partial<Record<MissionEvent, MissionStatus>>> = {
   draft: { SUBMIT_FOR_APPROVAL: "awaiting_approval", CANCEL: "cancelled" },
@@ -29,6 +20,5 @@ export function transitionMission(mission: GrowthMission, event: MissionEvent): 
   return { ...mission, status: next };
 }
 
-export function isTerminalMissionStatus(status: MissionStatus): boolean {
-  return status === "completed" || status === "cancelled";
-}
+export function isTerminalMissionStatus(status: MissionStatus): boolean { return status === "completed" || status === "cancelled"; }
+export function isRecoverableMissionStatus(status: MissionStatus): boolean { return status === "failed" || status === "human_review"; }
