@@ -1,23 +1,6 @@
-import type { AutonomyLevel, GrowthAction } from "./growthTypes";
-
-export type AgentRunPolicy = {
-  maxAutonomyLevel: AutonomyLevel;
-  requireApprovalAbove: AutonomyLevel;
-  maxActionsPerMission: number;
-};
-
-export const DEFAULT_AGENT_RUN_POLICY: AgentRunPolicy = {
-  maxAutonomyLevel: 3,
-  requireApprovalAbove: 3,
-  maxActionsPerMission: 10,
-};
-
-export function validateAgentRun(actions: readonly GrowthAction[], policy: AgentRunPolicy = DEFAULT_AGENT_RUN_POLICY): void {
-  if (actions.length > policy.maxActionsPerMission) throw new Error(`Mission exceeds action limit: ${actions.length}/${policy.maxActionsPerMission}`);
-  for (const action of actions) {
-    if (action.autonomyLevel > policy.maxAutonomyLevel) throw new Error(`Action ${action.id} exceeds agent autonomy limit`);
-    if (action.autonomyLevel >= policy.requireApprovalAbove && !action.requiresApproval) {
-      throw new Error(`Action ${action.id} requires approval at autonomy level ${action.autonomyLevel}`);
-    }
-  }
-}
+import type { AutonomyLevel, GrowthAction, GrowthMission } from "./growthTypes";
+export type AgentRunPolicy = { maxAutonomyLevel: AutonomyLevel; requireApprovalAbove: AutonomyLevel; maxActionsPerMission: number };
+export const DEFAULT_AGENT_RUN_POLICY: AgentRunPolicy = { maxAutonomyLevel: 3, requireApprovalAbove: 3, maxActionsPerMission: 10 };
+export function validateAgentRun(actions: readonly GrowthAction[], policy: AgentRunPolicy = DEFAULT_AGENT_RUN_POLICY): void { if (actions.length > policy.maxActionsPerMission) throw new Error(`Mission exceeds action limit: ${actions.length}/${policy.maxActionsPerMission}`); for (const action of actions) { if (action.autonomyLevel > policy.maxAutonomyLevel) throw new Error(`Action ${action.id} exceeds agent autonomy limit`); if (action.autonomyLevel >= policy.requireApprovalAbove && !action.requiresApproval) throw new Error(`Action ${action.id} requires approval at autonomy level ${action.autonomyLevel}`); } }
+export type RunDecision = { proceed: boolean; reason: string; requiresHuman: boolean };
+export function evaluateMissionRun(mission: GrowthMission): RunDecision { if (mission.status === "cancelled" || mission.status === "completed") return { proceed: false, reason: "terminal mission", requiresHuman: false }; if (mission.status === "awaiting_approval" || mission.status === "human_review") return { proceed: false, reason: "human approval required", requiresHuman: true }; if (!mission.actions.length || !mission.measurementKpis.length) return { proceed: false, reason: "mission contract incomplete", requiresHuman: true }; if (mission.confidence !== undefined && mission.confidence < 0.55) return { proceed: false, reason: "confidence below execution threshold", requiresHuman: true }; validateAgentRun(mission.actions); return { proceed: true, reason: "mission satisfies autonomous execution policy", requiresHuman: false }; }
