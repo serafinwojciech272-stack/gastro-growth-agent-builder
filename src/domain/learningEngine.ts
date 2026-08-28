@@ -1,37 +1,6 @@
 import type { GrowthOutcome, GrowthDecisionContext } from "./growthTypes";
-
-export type LearningSignal = {
-  kpi: string;
-  direction: "positive" | "neutral" | "negative";
-  confidence: number;
-  sampleSize: number;
-  evidence: string[];
-};
-
-export type LearningRecommendation = {
-  signal: LearningSignal;
-  recommendation: "scale" | "iterate" | "stop" | "collect_more_data";
-};
-
-export function learnFromOutcomes(context: GrowthDecisionContext, outcomes: readonly GrowthOutcome[]): LearningRecommendation[] {
-  const byKpi = new Map<string, { deltas: number[]; evidence: string[]; confidences: number[] }>();
-  for (const outcome of outcomes) for (const [kpi, metric] of Object.entries(outcome.metrics)) {
-    const delta = metric.delta ?? (metric.before !== undefined && metric.after !== undefined ? metric.after - metric.before : undefined);
-    if (delta === undefined) continue;
-    const bucket = byKpi.get(kpi) ?? { deltas: [], evidence: [], confidences: [] };
-    bucket.deltas.push(delta); bucket.evidence.push(...(outcome.evidence ?? [])); bucket.confidences.push(outcome.confidence); byKpi.set(kpi, bucket);
-  }
-  return context.kpis.flatMap((kpi) => {
-    const bucket = byKpi.get(kpi.key);
-    if (!bucket?.deltas.length) return [{ signal: { kpi: kpi.key, direction: "neutral", confidence: 0, sampleSize: 0, evidence: [] }, recommendation: "collect_more_data" } satisfies LearningRecommendation];
-    const average = bucket.deltas.reduce((sum, value) => sum + value, 0) / bucket.deltas.length;
-    const positive = bucket.deltas.filter((value) => value > 0).length;
-    const negative = bucket.deltas.filter((value) => value < 0).length;
-    const direction = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
-    const sampleConfidence = Math.min(1, bucket.deltas.length / 5);
-    const evidenceConfidence = bucket.confidences.reduce((a, b) => a + b, 0) / bucket.confidences.length;
-    const confidence = Math.min(sampleConfidence, evidenceConfidence);
-    const recommendation = confidence < 0.6 ? "collect_more_data" : direction === "positive" && average > 0 ? "scale" : direction === "negative" ? "stop" : "iterate";
-    return [{ signal: { kpi: kpi.key, direction, confidence, sampleSize: bucket.deltas.length, evidence: [...new Set(bucket.evidence)].slice(0, 10) }, recommendation } satisfies LearningRecommendation];
-  });
-}
+export type LearningSignal = { kpi: string; direction: "positive" | "neutral" | "negative"; confidence: number; sampleSize: number; evidence: string[] };
+export type LearningRecommendation = { signal: LearningSignal; recommendation: "scale" | "iterate" | "stop" | "collect_more_data" };
+export type LearningMemory = LearningSignal & { outcome: GrowthOutcome["status"]; delta: number | undefined; recommendation: string; updatedAt: string };
+export function learnFromOutcomes(context: GrowthDecisionContext, outcomes: readonly GrowthOutcome[]): LearningRecommendation[] { const byKpi = new Map<string,{deltas:number[];evidence:string[];confidences:number[]}>(); for(const outcome of outcomes) for(const [kpi,metric] of Object.entries(outcome.metrics)){const delta=metric.delta ?? (metric.before!==undefined&&metric.after!==undefined?metric.after-metric.before:undefined);if(delta===undefined)continue;const b=byKpi.get(kpi)??{deltas:[],evidence:[],confidences:[]};b.deltas.push(delta);b.evidence.push(...(outcome.evidence??[]));b.confidences.push(outcome.confidence);byKpi.set(kpi,b);} return context.kpis.flatMap(kpi=>{const b=byKpi.get(kpi.key);if(!b?.deltas.length)return [{signal:{kpi:kpi.key,direction:"neutral",confidence:0,sampleSize:0,evidence:[]},recommendation:"collect_more_data"} satisfies LearningRecommendation];const avg=b.deltas.reduce((a,v)=>a+v,0)/b.deltas.length;const p=b.deltas.filter(v=>v>0).length,n=b.deltas.filter(v=>v<0).length;const direction=p>n?"positive":n>p?"negative":"neutral";const confidence=Math.min(Math.min(1,b.deltas.length/5),b.confidences.reduce((a,v)=>a+v,0)/b.confidences.length);const recommendation=confidence<.6?"collect_more_data":direction==="positive"&&avg>0?"scale":direction==="negative"?"stop":"iterate";return [{signal:{kpi:kpi.key,direction,confidence,sampleSize:b.deltas.length,evidence:[...new Set(b.evidence)].slice(0,10)},recommendation} satisfies LearningRecommendation];}); }
+export function deriveLearningMemory(outcomes: readonly GrowthOutcome[]): LearningMemory[] { const grouped=new Map<string,GrowthOutcome[]>(); for(const o of outcomes) for(const [kpi,metric] of Object.entries(o.metrics)){const list=grouped.get(kpi)??[];list.push({...o,metrics:{[kpi]:metric}});grouped.set(kpi,list);} return [...grouped.entries()].map(([kpi,list])=>{const deltas=list.map(o=>o.metrics[kpi]?.delta).filter((v):v is number=>typeof v==="number");const delta=deltas.length?deltas.reduce((a,b)=>a+b,0)/deltas.length:undefined;const confidence=list.reduce((a,o)=>a+o.confidence,0)/list.length;const positive=list.filter(o=>o.status==="success"||o.status==="partial_success").length;return {kpi,direction:delta===undefined||delta===0?"neutral":delta>0?"positive":"negative",confidence,sampleSize:list.length,evidence:[...new Set(list.flatMap(o=>o.evidence??[]))].slice(0,10),outcome:list[0].status,delta,recommendation:positive/list.length>=.7?`Repeat actions correlated with ${kpi} improvement.`:delta!==undefined&&delta<=0?`Change strategy before repeating actions for ${kpi}.`:`Collect more evidence for ${kpi}.`,updatedAt:new Date().toISOString()};}); }
