@@ -5,6 +5,7 @@ import { InMemoryJobQueue, runExecutionJob, type ExecutionJob } from "./jobQueue
 import type { GrowthEventStore } from "./growthEventStore";
 import type { AgentTelemetry } from "./agentTelemetry";
 import { emitExecutionEvent } from "./executionEvents";
+import { createActionEvent } from "./growthEventLog";
 
 export type OrchestrationResult = {
   completed: ExecutionJob[];
@@ -38,17 +39,17 @@ export async function orchestrateApprovedMission(
   const skipped: ExecutionJob[] = [];
   for (const job of jobs) {
     const action = actions.find((item) => item.id === job.actionId);
-    if (!action) { skipped.push({ ...job, status: "failed" }); continue; }
+    if (!action) { skipped.push(job); continue; }
+
+    if (events && telemetry) await emitExecutionEvent(events, telemetry, createActionEvent(mission.id, action.id, "action.started", { jobId: job.id }));
     const result = await runExecutionJob(job, mission, action, registry, ledger);
-    if (result.job.status === "completed") completed.push(result.job);
-    else failed.push(result.job);
-    if (events && telemetry) {
-      await emitExecutionEvent(events, telemetry, {
-        missionId: mission.id,
-        type: result.job.status === "completed" ? "mission.executing" : "mission.cancelled",
-        actor: "system",
-        metadata: { actionId: action.id, jobId: job.id, result: result.result },
-      });
+
+    if (result.job.status === "completed") {
+      completed.push(result.job);
+      if (events && telemetry) await emitExecutionEvent(events, telemetry, createActionEvent(mission.id, action.id, "action.completed", { jobId: job.id, result: result.result }));
+    } else {
+      failed.push(result.job);
+      if (events && telemetry) await emitExecutionEvent(events, telemetry, createActionEvent(mission.id, action.id, "action.failed", { jobId: job.id, attempts: result.job.attempts, error: result.result.error }));
     }
   }
 
