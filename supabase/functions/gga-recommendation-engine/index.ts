@@ -1,25 +1,105 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callOpenRouter, parseJson } from '../_shared/ai.ts';
 
-const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Content-Type":"application/json"};
-Deno.serve(async(req)=>{
- if(req.method==="OPTIONS") return new Response("ok",{headers});
- try{
-  const supabase=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_ANON_KEY")!,{global:{headers:{Authorization:req.headers.get("Authorization")??""}}});
-  const {data:{user}}=await supabase.auth.getUser(); if(!user) return new Response(JSON.stringify({error:"Unauthorized"}),{status:401,headers});
-  const {restaurantId}=await req.json(); if(!restaurantId) throw new Error("restaurantId is required");
-  const [{data:restaurant,error:re},{data:advisor},{data:menu},{data:reviews}]=await Promise.all([
-   supabase.from("restaurants").select("*").eq("id",restaurantId).single(),
-   supabase.from("ai_analyses").select("id,analysis_result,created_at").eq("restaurant_id",restaurantId).order("created_at",{ascending:false}).limit(3),
-   supabase.from("menu_analyses").select("id,score,strengths,weaknesses,opportunities,recommendations,created_at").eq("restaurant_id",restaurantId).order("created_at",{ascending:false}).limit(3),
-   supabase.from("review_analyses").select("id,summary,sentiment_breakdown,recurring_issues,strengths,recommendations,created_at").eq("restaurant_id",restaurantId).order("created_at",{ascending:false}).limit(3)
-  ]); if(re) throw re;
-  const apiKey=Deno.env.get("OPENROUTER_API_KEY"); if(!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
-  const model=Deno.env.get("GGA_AI_MODEL")??"openai/gpt-4o-mini";
-  const prompt=`You are the GGA Recommendation Engine. Synthesize existing restaurant intelligence into a prioritized action backlog. Do not invent metrics. Return ONLY JSON with {recommendations:[{source_type,title,problem,rationale,priority,expected_impact,confidence,action_payload}]} where priority is critical|high|medium|low and source_type is advisor|menu|reviews|marketing|competitor|seo|analytics. Restaurant=${JSON.stringify(restaurant)} Advisor=${JSON.stringify(advisor??[])} Menu=${JSON.stringify(menu??[])} Reviews=${JSON.stringify(reviews??[])}`;
-  const response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json","HTTP-Referer":"https://gastrogrowthadvisor.com","X-Title":"Gastro Growth Advisor"},body:JSON.stringify({model,temperature:.15,response_format:{type:"json_object"},messages:[{role:"system",content:"You are a rigorous restaurant growth strategist. Prioritize actions by impact, evidence and feasibility."},{role:"user",content:prompt}]})});
-  if(!response.ok) throw new Error(`AI provider error: ${response.status}`); const payload=await response.json(); const result=JSON.parse(payload.choices?.[0]?.message?.content??"{}");
-  const rows=(result.recommendations??[]).slice(0,20).map((r:any)=>({restaurant_id:restaurantId,source_type:r.source_type??"advisor",title:String(r.title??"Untitled recommendation").slice(0,180),problem:r.problem??null,rationale:r.rationale??null,priority:r.priority??"medium",expected_impact:r.expected_impact??null,confidence:Number(r.confidence??0),action_payload:r.action_payload??{},created_by:user.id}));
-  if(rows.length){ const {error}=await supabase.from("recommendations").insert(rows); if(error) throw error; }
-  return new Response(JSON.stringify({count:rows.length,recommendations:rows}),{headers});
- }catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"Unknown error"}),{status:400,headers});}
+const headers = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json',
+};
+
+type Recommendation = {
+  source_type: 'advisor' | 'menu' | 'reviews' | 'marketing' | 'competitor' | 'seo' | 'analytics';
+  title: string;
+  problem: string | null;
+  rationale: string | null;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  expected_impact: string | null;
+  confidence: number;
+  action_payload: Record<string, unknown>;
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  try {
+    const auth = req.headers.get('Authorization');
+    if (!auth?.startsWith('Bearer ')) return json({ error: 'Authentication required' }, 401);
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: auth } } },
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return json({ error: 'Unauthorized' }, 401);
+
+    const body = await req.json();
+    const restaurantId = typeof body?.restaurantId === 'string' ? body.restaurantId.trim() : '';
+    if (!restaurantId) return json({ error: 'restaurantId is required' }, 400);
+
+    const [{ data: restaurant, error: restaurantError }, { data: advisor }, { data: menu }, { data: reviews }] = await Promise.all([
+      supabase.from('restaurants').select('*').eq('id', restaurantId).single(),
+      supabase.from('ai_analyses').select('id,diagnosis,root_causes,recommendations,priority,created_at').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(3),
+      supabase.from('menu_analyses').select('id,score,strengths,issues,opportunities,recommendations,created_at').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(3),
+      supabase.from('review_analyses').select('id,summary,sentiment_breakdown,recurring_issues,strengths,recommendations,created_at').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(3),
+    ]);
+    if (restaurantError) throw restaurantError;
+
+    const system = `You are the GGA Recommendation Engine. Synthesize existing restaurant intelligence into a prioritized action backlog. Never invent metrics, facts, competitors or customer behavior. Prefer evidence-backed actions. Deduplicate overlapping recommendations. Return JSON only: {"recommendations":[{"source_type":"advisor|menu|reviews|marketing|competitor|seo|analytics","title":string,"problem":string|null,"rationale":string|null,"priority":"critical|high|medium|low","expected_impact":string|null,"confidence":number,"action_payload":object}]}. Confidence must be 0-1. Return at most 20 recommendations.`;
+    const ai = await callOpenRouter({
+      task: 'recommendations',
+      system,
+      user: JSON.stringify({ restaurant, advisor: advisor ?? [], menu: menu ?? [], reviews: reviews ?? [] }),
+      temperature: 0.15,
+    });
+    const parsed = parseJson<{ recommendations?: Partial<Recommendation>[] }>(ai.content);
+    const rows = normalizeRecommendations(parsed.recommendations ?? []).map((r) => ({
+      restaurant_id: restaurantId,
+      ...r,
+      created_by: user.id,
+    }));
+
+    if (rows.length) {
+      const { error } = await supabase.from('recommendations').insert(rows);
+      if (error) throw error;
+    }
+
+    return json({ count: rows.length, recommendations: rows, model: ai.model, latency_ms: ai.latencyMs, attempts: ai.attempts });
+  } catch (error) {
+    console.error('GGA recommendation engine error:', error);
+    return json({ error: error instanceof Error ? error.message : 'Unexpected recommendation error.' }, 502);
+  }
 });
+
+function normalizeRecommendations(items: Partial<Recommendation>[]): Recommendation[] {
+  const sourceTypes = new Set<Recommendation['source_type']>(['advisor', 'menu', 'reviews', 'marketing', 'competitor', 'seo', 'analytics']);
+  const priorities = new Set<Recommendation['priority']>(['critical', 'high', 'medium', 'low']);
+  const seen = new Set<string>();
+  const output: Recommendation[] = [];
+
+  for (const item of items.slice(0, 20)) {
+    const title = String(item?.title || 'Untitled recommendation').trim().slice(0, 180);
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push({
+      source_type: sourceTypes.has(item?.source_type as Recommendation['source_type']) ? item!.source_type as Recommendation['source_type'] : 'advisor',
+      title,
+      problem: item?.problem ? String(item.problem).slice(0, 800) : null,
+      rationale: item?.rationale ? String(item.rationale).slice(0, 1200) : null,
+      priority: priorities.has(item?.priority as Recommendation['priority']) ? item!.priority as Recommendation['priority'] : 'medium',
+      expected_impact: item?.expected_impact ? String(item.expected_impact).slice(0, 500) : null,
+      confidence: Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
+      action_payload: item?.action_payload && typeof item.action_payload === 'object' && !Array.isArray(item.action_payload)
+        ? item.action_payload as Record<string, unknown>
+        : {},
+    });
+  }
+  return output;
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers });
+}
