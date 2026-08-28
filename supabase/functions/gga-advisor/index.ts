@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callOpenRouter, parseJson } from '../_shared/ai.ts';
+import { evaluateStructuredOutput } from '../_shared/quality.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,6 +59,13 @@ Deno.serve(async (req) => {
       temperature: 0.2,
     });
     const parsed = normalizeAdvisorResult(parseJson<Partial<AdvisorResult>>(ai.content));
+    const quality = evaluateStructuredOutput(parsed, {
+      required: ['diagnosis', 'root_causes', 'recommendations', 'priority'],
+      arrays: ['root_causes', 'recommendations'],
+      minItems: { root_causes: 2, recommendations: 2 },
+      maxItems: { root_causes: 5, recommendations: 4 },
+      maxStringLength: { diagnosis: 700 },
+    });
 
     const { data: saved, error: saveError } = await supabase
       .from('ai_analyses')
@@ -65,7 +73,22 @@ Deno.serve(async (req) => {
       .select('id,created_at').single();
     if (saveError) throw saveError;
 
-    return json({ analysis_id: saved.id, created_at: saved.created_at, restaurant: { id: restaurant.id, name: restaurant.name }, model: ai.model, latency_ms: ai.latencyMs, attempts: ai.attempts, ...parsed });
+    const { error: telemetryError } = await supabase.rpc('record_ai_run', {
+      p_restaurant_id: restaurant.id,
+      p_task: 'advisor',
+      p_model: ai.model,
+      p_attempts: ai.attempts,
+      p_latency_ms: ai.latencyMs,
+      p_prompt_tokens: ai.usage?.promptTokens ?? null,
+      p_completion_tokens: ai.usage?.completionTokens ?? null,
+      p_total_tokens: ai.usage?.totalTokens ?? null,
+      p_success: true,
+      p_quality_score: quality.score,
+      p_metadata: { checks: quality.checks, analysis_id: saved.id },
+    });
+    if (telemetryError) console.error('GGA telemetry error:', telemetryError);
+
+    return json({ analysis_id: saved.id, created_at: saved.created_at, restaurant: { id: restaurant.id, name: restaurant.name }, model: ai.model, latency_ms: ai.latencyMs, attempts: ai.attempts, quality_score: quality.score, ...parsed });
   } catch (error) {
     console.error('GGA advisor error:', error);
     return json({ error: error instanceof Error ? error.message : 'Unexpected advisor error.' }, 502);
