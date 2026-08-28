@@ -22,6 +22,7 @@ export function buildGrowthMission(
   const actions: GrowthAction[] = decision.actions.map((action) => ({ ...action }));
   return {
     id: options.missionId,
+    businessId: context.businessId,
     vertical: context.vertical,
     objective: decision.recommendedMission.objective,
     baseline: context.kpis.find((kpi) => kpi.key === decision.primaryOpportunity.relatedKpis[0])?.current?.toString(),
