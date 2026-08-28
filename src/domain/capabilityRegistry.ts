@@ -1,4 +1,4 @@
-import type { GrowthAction, GrowthMission } from "./growthTypes";
+import type { GrowthAction, GrowthMission, AutonomyLevel, ActionRisk } from "./growthTypes";
 import { evaluateExecutionPolicy } from "./executionPolicy";
 
 export type CapabilityContext = { mission: GrowthMission; action: GrowthAction };
@@ -9,7 +9,9 @@ export type Capability = {
   id: string;
   name: string;
   description: string;
-  risk: "low" | "medium" | "high";
+  risk: ActionRisk;
+  maxAutonomyLevel?: AutonomyLevel;
+  health?: "healthy" | "degraded" | "offline";
   execute: CapabilityExecutor;
 };
 
@@ -27,7 +29,11 @@ export class CapabilityRegistry {
   async execute(id: string, context: CapabilityContext): Promise<CapabilityResult> {
     const capability = this.get(id);
     if (!capability) return { status: "failed", error: `Unknown capability: ${id}` };
+    if (capability.health === "offline") return { status: "failed", error: `Capability is offline: ${id}` };
     if (capability.risk === "high") return { status: "failed", error: "High-risk capability requires human review" };
+    if (capability.maxAutonomyLevel !== undefined && context.action.autonomyLevel > capability.maxAutonomyLevel) {
+      return { status: "failed", error: "Action autonomy exceeds capability limit" };
+    }
     const policy = evaluateExecutionPolicy(context.mission, context.action);
     if (!policy.allowed) return { status: "failed", error: policy.reason };
     return capability.execute(context);
