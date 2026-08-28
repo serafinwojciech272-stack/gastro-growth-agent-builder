@@ -1,35 +1,116 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callOpenRouter, parseJson } from '../_shared/ai.ts';
 
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json',
+};
+
+type ReviewInput = { rating?: number; review_text?: string; source?: string };
+type ReviewResult = {
+  summary: string;
+  sentiment_breakdown: { positive: number; neutral: number; negative: number };
+  recurring_issues: { issue: string; frequency: number; severity: 'low' | 'medium' | 'high'; evidence: string }[];
+  strengths: { strength: string; frequency: number }[];
+  recommendations: { priority: 'high' | 'medium' | 'low'; recommendation: string; reason: string; action: string }[];
+};
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
   try {
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } });
+    const auth = req.headers.get('Authorization');
+    if (!auth?.startsWith('Bearer ')) return json({ error: 'Authentication required' }, 401);
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: auth } } },
+    );
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+    if (!user) return json({ error: 'Unauthorized' }, 401);
 
-    const { restaurantId, reviews } = await req.json();
-    if (!restaurantId || !Array.isArray(reviews) || reviews.length === 0) throw new Error("restaurantId and reviews are required");
+    const body = await req.json();
+    const restaurantId = typeof body?.restaurantId === 'string' ? body.restaurantId.trim() : '';
+    const reviews = Array.isArray(body?.reviews) ? body.reviews as ReviewInput[] : [];
+    if (!restaurantId || reviews.length === 0) return json({ error: 'restaurantId and reviews are required' }, 400);
 
-    const { data: restaurant, error: restaurantError } = await supabase.from("restaurants").select("id,name,cuisine,city,country,website,average_ticket,target_customer,business_goals,current_problems").eq("id", restaurantId).single();
+    const { data: restaurant, error: restaurantError } = await supabase
+      .from('restaurants')
+      .select('id,name,cuisine,city,country,website,average_ticket,target_customer,business_goals,current_problems')
+      .eq('id', restaurantId).single();
     if (restaurantError) throw restaurantError;
 
-    const allowed = reviews.slice(0, 100).map((r: { rating?: number; review_text?: string; source?: string }) => ({ rating: r.rating ?? null, review_text: String(r.review_text ?? "").slice(0, 2000), source: r.source ?? "manual" }));
-    const prompt = `You are Gastro Growth Advisor Review Intelligence. Analyze restaurant reviews and return ONLY valid JSON. Restaurant: ${JSON.stringify(restaurant)} Reviews: ${JSON.stringify(allowed)} Schema: {"summary":string,"sentiment_breakdown":{"positive":number,"neutral":number,"negative":number},"recurring_issues":[{"issue":string,"frequency":number,"severity":"low|medium|high","evidence":string}],"strengths":[{"strength":string,"frequency":number}],"recommendations":[{"priority":"high|medium|low","recommendation":string,"reason":string,"action":string}]}. Do not invent facts. Base frequency on supplied reviews.`;
-    const apiKey = Deno.env.get("OPENROUTER_API_KEY");
-    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
-    const model = Deno.env.get("GGA_AI_MODEL") ?? "openai/gpt-4o-mini";
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://gastrogrowthadvisor.com", "X-Title": "Gastro Growth Advisor" }, body: JSON.stringify({ model, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: "You are a precise restaurant reputation analyst." }, { role: "user", content: prompt }] }) });
-    if (!response.ok) throw new Error(`AI provider error: ${response.status}`);
-    const payload = await response.json();
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error("AI returned no content");
-    const result = JSON.parse(content);
-    const { data: analysis, error } = await supabase.from("review_analyses").insert({ restaurant_id: restaurantId, summary: result.summary ?? "", sentiment_breakdown: result.sentiment_breakdown ?? {}, recurring_issues: result.recurring_issues ?? [], strengths: result.strengths ?? [], recommendations: result.recommendations ?? [], raw_result: result, created_by: user.id }).select().single();
+    const allowed = reviews.slice(0, 100).map((r) => ({
+      rating: typeof r?.rating === 'number' ? Math.max(1, Math.min(5, r.rating)) : null,
+      review_text: String(r?.review_text ?? '').slice(0, 2000),
+      source: String(r?.source ?? 'manual').slice(0, 80),
+    }));
+
+    const system = `You are Gastro Growth Advisor Review Intelligence. Analyze only supplied restaurant and review data. Never invent facts. Base frequencies only on supplied reviews. Return JSON only with summary, sentiment_breakdown, recurring_issues, strengths and recommendations. sentiment_breakdown must contain positive, neutral and negative integer counts. recurring_issues contain issue, frequency, severity (low|medium|high), evidence. strengths contain strength and frequency. recommendations contain priority (high|medium|low), recommendation, reason and action.`;
+    const ai = await callOpenRouter({
+      task: 'reviews',
+      system,
+      user: JSON.stringify({ restaurant, reviews: allowed }),
+      temperature: 0.2,
+    });
+    const result = normalizeResult(parseJson<Partial<ReviewResult>>(ai.content));
+
+    const { data: analysis, error } = await supabase
+      .from('review_analyses')
+      .insert({
+        restaurant_id: restaurantId,
+        summary: result.summary,
+        sentiment_breakdown: result.sentiment_breakdown,
+        recurring_issues: result.recurring_issues,
+        strengths: result.strengths,
+        recommendations: result.recommendations,
+        raw_result: result,
+        created_by: user.id,
+      })
+      .select().single();
     if (error) throw error;
-    return new Response(JSON.stringify({ analysis }), { headers: { ...cors, "Content-Type": "application/json" } });
+
+    return json({ analysis, model: ai.model, latency_ms: ai.latencyMs, attempts: ai.attempts });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    console.error('GGA review analysis error:', error);
+    return json({ error: error instanceof Error ? error.message : 'Unexpected review analysis error.' }, 502);
   }
 });
+
+function normalizeResult(input: Partial<ReviewResult>): ReviewResult {
+  const sentiment = input.sentiment_breakdown ?? { positive: 0, neutral: 0, negative: 0 };
+  const severity = new Set(['low', 'medium', 'high']);
+  const priority = new Set(['high', 'medium', 'low']);
+  return {
+    summary: String(input.summary || '').slice(0, 3000),
+    sentiment_breakdown: {
+      positive: Math.max(0, Math.round(Number(sentiment.positive) || 0)),
+      neutral: Math.max(0, Math.round(Number(sentiment.neutral) || 0)),
+      negative: Math.max(0, Math.round(Number(sentiment.negative) || 0)),
+    },
+    recurring_issues: Array.isArray(input.recurring_issues) ? input.recurring_issues.slice(0, 10).map((r) => ({
+      issue: String(r?.issue || '').slice(0, 300),
+      frequency: Math.max(0, Math.round(Number(r?.frequency) || 0)),
+      severity: severity.has(r?.severity) ? r!.severity : 'medium',
+      evidence: String(r?.evidence || '').slice(0, 600),
+    })) : [],
+    strengths: Array.isArray(input.strengths) ? input.strengths.slice(0, 10).map((r) => ({
+      strength: String(r?.strength || '').slice(0, 300),
+      frequency: Math.max(0, Math.round(Number(r?.frequency) || 0)),
+    })) : [],
+    recommendations: Array.isArray(input.recommendations) ? input.recommendations.slice(0, 8).map((r) => ({
+      priority: priority.has(r?.priority) ? r!.priority : 'medium',
+      recommendation: String(r?.recommendation || '').slice(0, 500),
+      reason: String(r?.reason || '').slice(0, 700),
+      action: String(r?.action || '').slice(0, 700),
+    })) : [],
+  };
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: cors });
+}
