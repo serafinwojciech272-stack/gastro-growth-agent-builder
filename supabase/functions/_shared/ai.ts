@@ -1,3 +1,5 @@
+import { assertAiInput, getAiBudget } from './aiPolicy.ts';
+
 export type AiTask = 'advisor' | 'menu' | 'reviews' | 'recommendations' | 'general';
 
 export type AiCallResult = {
@@ -37,6 +39,10 @@ export async function callOpenRouter(params: {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
 
+  const temperature = params.temperature ?? 0.2;
+  const budget = getAiBudget(params.task);
+  assertAiInput(params.task, params.system, params.user, temperature);
+
   let lastError = 'AI provider failed';
   const started = Date.now();
   const models = params.selectedModel
@@ -60,7 +66,8 @@ export async function callOpenRouter(params: {
         },
         body: JSON.stringify({
           model,
-          temperature: params.temperature ?? 0.2,
+          temperature,
+          max_tokens: budget.maxOutputTokens,
           messages: [
             { role: 'system', content: params.system },
             { role: 'user', content: params.user },
@@ -70,9 +77,7 @@ export async function callOpenRouter(params: {
 
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        lastError = typeof payload?.error?.message === 'string'
-          ? payload.error.message
-          : `AI provider error (${response.status})`;
+        lastError = typeof payload?.error?.message === 'string' ? payload.error.message : `AI provider error (${response.status})`;
         continue;
       }
 
