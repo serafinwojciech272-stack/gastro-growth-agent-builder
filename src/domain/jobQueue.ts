@@ -16,9 +16,23 @@ export type ExecutionJob = {
 export class InMemoryJobQueue {
   private readonly jobs: ExecutionJob[] = [];
 
-  enqueue(job: ExecutionJob): void { this.jobs.push(job); }
-  dequeue(): ExecutionJob | undefined { return this.jobs.find((job) => job.status === "queued"); }
-  all(): ExecutionJob[] { return [...this.jobs]; }
+  enqueue(job: ExecutionJob): void { this.jobs.push({ ...job }); }
+
+  claim(): ExecutionJob | undefined {
+    const index = this.jobs.findIndex((job) => job.status === "queued");
+    if (index < 0) return undefined;
+    this.jobs[index] = { ...this.jobs[index], status: "running" };
+    return { ...this.jobs[index] };
+  }
+
+  dequeue(): ExecutionJob | undefined { return this.claim(); }
+  all(): ExecutionJob[] { return this.jobs.map((job) => ({ ...job })); }
+
+  update(job: ExecutionJob): void {
+    const index = this.jobs.findIndex((item) => item.id === job.id);
+    if (index < 0) throw new Error(`Job ${job.id} not found`);
+    this.jobs[index] = { ...job };
+  }
 }
 
 export async function runExecutionJob(
