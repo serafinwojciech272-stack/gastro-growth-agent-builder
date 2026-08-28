@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
@@ -74,7 +74,7 @@ export default function DashboardPage() {
           <p className="mt-1 text-slate-500">Willkommen zurück, {restaurant?.name || "Restaurant"}.</p>
         </header>
 
-        <GrowthCommandCenter />
+        <GrowthCommandCenter score={score} rating={rating} reviews={reviews} restaurantName={restaurant?.name} />
 
         <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-lg">
