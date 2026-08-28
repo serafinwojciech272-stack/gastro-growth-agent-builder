@@ -15,8 +15,8 @@ type OrchestrationInput = {
 export type GrowthOrchestrationResult = {
   decision: GrowthDecision;
   mission: GrowthMission;
-  requiresApproval: boolean;
-  nextStep: "approval" | "execution";
+  requiresApproval: true;
+  nextStep: "approval";
 };
 
 export function orchestrateGrowthMission(input: OrchestrationInput): GrowthOrchestrationResult | null {
@@ -29,13 +29,10 @@ export function orchestrateGrowthMission(input: OrchestrationInput): GrowthOrche
     target: input.target,
   });
 
-  const requiresApproval = draft.actions.some((action) => action.requiresApproval);
-  const mission = requiresApproval ? prepareMissionForApproval(draft) : draft;
-
   return {
     decision,
-    mission,
-    requiresApproval,
-    nextStep: requiresApproval ? "approval" : "execution",
+    mission: prepareMissionForApproval(draft),
+    requiresApproval: true,
+    nextStep: "approval",
   };
 }
