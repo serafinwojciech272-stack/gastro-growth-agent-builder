@@ -8,8 +8,8 @@ export type OutcomeStatus =
   | "insufficient_data";
 
 export type ActionRisk = "low" | "medium" | "high";
-
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4 | 5;
+export type MissionStatus = "draft" | "awaiting_approval" | "approved" | "executing" | "measuring" | "completed" | "cancelled";
 
 export type GrowthKpi = {
   key: string;
@@ -42,7 +42,7 @@ export type GrowthMission = {
   confidence?: number;
   actions: GrowthAction[];
   measurementKpis: GrowthKpi[];
-  status: "draft" | "awaiting_approval" | "approved" | "executing" | "measuring" | "completed" | "cancelled";
+  status: MissionStatus;
 };
 
 export type GrowthOutcome = {
