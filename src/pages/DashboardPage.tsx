@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { Loader2, AlertCircle, UtensilsCrossed, TrendingUp, Star } from "lucide-react";
+import GrowthCommandCenter from "../components/GrowthCommandCenter";
 
 type Restaurant = {
   name?: string | null;
@@ -66,28 +67,33 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-300 font-sans p-4 sm:p-8">
-      <header className="mb-8">
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">Dashboard</h1>
-        <p className="text-slate-500 mt-1">Willkommen zurück, {restaurant?.name || "Restaurant"}!</p>
-      </header>
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-8">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-400">Gastro Growth Advisor</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-white">Growth Command Center</h1>
+          <p className="mt-1 text-slate-500">Willkommen zurück, {restaurant?.name || "Restaurant"}.</p>
+        </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-medium text-slate-500">Growth Score</h3><TrendingUp className="text-purple-500" size={20} /></div>
-          <p className="text-4xl font-extrabold text-white">{score === null ? "Noch nicht analysiert" : `${score}/100`}</p>
-          {score !== null && <div className="mt-4 h-2 bg-slate-800 rounded-full"><div className="h-full bg-gradient-to-r from-purple-600 to-orange-500 rounded-full" style={{ width: `${Math.max(0, Math.min(100, score))}%` }} /></div>}
-        </div>
+        <GrowthCommandCenter />
 
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-medium text-slate-500">Menu Status</h3><UtensilsCrossed className="text-orange-500" size={20} /></div>
-          <p className="text-2xl font-bold text-white">{score === null ? "Analyse erforderlich" : "Analyse verfügbar"}</p>
-          <p className="text-slate-500 text-sm mt-1">Starten Sie die KI-Analyse für aktuelle Empfehlungen.</p>
-        </div>
+        <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-lg">
+            <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-slate-500">Growth Score</h3><TrendingUp className="text-purple-500" size={20} /></div>
+            <p className="text-4xl font-extrabold text-white">{score === null ? "Noch nicht analysiert" : `${score}/100`}</p>
+            {score !== null && <div className="mt-4 h-2 rounded-full bg-slate-800"><div className="h-full rounded-full bg-gradient-to-r from-purple-600 to-orange-500" style={{ width: `${Math.max(0, Math.min(100, score))}%` }} /></div>}
+          </div>
 
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-medium text-slate-500">Bewertungen</h3><Star className="text-yellow-500" size={20} /></div>
-          <p className="text-2xl font-bold text-white">{rating === null ? "Noch keine Daten" : `${rating} Sterne`}</p>
-          <p className="text-slate-500 text-sm mt-1">{reviews === null ? "Noch keine Bewertungsdaten" : `${reviews} Bewertungen`}</p>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-lg">
+            <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-slate-500">Menu Status</h3><UtensilsCrossed className="text-orange-500" size={20} /></div>
+            <p className="text-2xl font-bold text-white">{score === null ? "Analyse erforderlich" : "Analyse verfügbar"}</p>
+            <p className="mt-1 text-sm text-slate-500">Starten Sie die KI-Analyse für aktuelle Empfehlungen.</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-lg">
+            <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-slate-500">Bewertungen</h3><Star className="text-yellow-500" size={20} /></div>
+            <p className="text-2xl font-bold text-white">{rating === null ? "Noch keine Daten" : `${rating} Sterne`}</p>
+            <p className="mt-1 text-sm text-slate-500">{reviews === null ? "Noch keine Bewertungsdaten" : `${reviews} Bewertungen`}</p>
+          </div>
         </div>
       </div>
     </div>
