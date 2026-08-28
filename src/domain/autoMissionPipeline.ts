@@ -2,7 +2,7 @@ import type { GrowthAction, GrowthDecisionContext, GrowthMission } from "./growt
 import { createGrowthDecision, type GrowthDecision, type OpportunitySignal } from "./growthDecisionEngine";
 import { buildGrowthMission } from "./missionBuilder";
 import type { MissionPersistence } from "./missionPersistence";
-import { persistDraftMission } from "./growthWorkflow";
+import { persistDraftMission, requestMissionApproval } from "./growthWorkflow";
 
 export type AutoMissionResult = {
   decision: GrowthDecision;
@@ -18,10 +18,11 @@ export async function autoCreateMission(
   const decision = createGrowthDecision(context, signals, actions);
   if (!decision) throw new Error("No actionable growth opportunity was selected");
 
-  const mission = buildGrowthMission(context, decision, {
+  const draft = buildGrowthMission(context, decision, {
     missionId: crypto.randomUUID(),
     status: "draft",
   });
-  await persistDraftMission(store, mission);
+  await persistDraftMission(store, draft);
+  const mission = await requestMissionApproval(store, draft.id);
   return { decision, mission };
 }
