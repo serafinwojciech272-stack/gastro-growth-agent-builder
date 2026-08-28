@@ -1,6 +1,5 @@
 import type { GrowthAction, GrowthDecisionContext, GrowthMission } from "./growthTypes";
 import { buildExecutionPlan, type ExecutionPlan } from "./executionPlan";
-import { CapabilityRegistry } from "./capabilityRegistry";
 
 export type ActionQuality = { score: number; approved: boolean; reasons: string[] };
 
@@ -17,25 +16,12 @@ export function qualityCheckAction(action: GrowthAction): ActionQuality {
 
 export function prioritizeActions(actions: readonly GrowthAction[]): GrowthAction[] {
   const riskWeight = { low: 3, medium: 2, high: 1 } as const;
-  return [...actions].sort((a, b) => {
-    const aScore = a.autonomyLevel * 10 + riskWeight[a.risk];
-    const bScore = b.autonomyLevel * 10 + riskWeight[b.risk];
-    return bScore - aScore;
-  });
+  return [...actions].sort((a, b) => (b.autonomyLevel * 10 + riskWeight[b.risk]) - (a.autonomyLevel * 10 + riskWeight[a.risk]));
 }
 
-export type AutoActionPlan = {
-  missionId: string;
-  actions: GrowthAction[];
-  quality: Array<ActionQuality & { actionId: string }>;
-  executionPlan: ExecutionPlan;
-};
+export type AutoActionPlan = { missionId: string; actions: GrowthAction[]; quality: Array<ActionQuality & { actionId: string }>; executionPlan: ExecutionPlan };
 
-export function autoGenerateActionPlan(
-  _context: GrowthDecisionContext,
-  mission: GrowthMission,
-  _registry: CapabilityRegistry,
-): AutoActionPlan {
+export function autoGenerateActionPlan(_context: GrowthDecisionContext, mission: GrowthMission): AutoActionPlan {
   const actions = prioritizeActions(mission.actions);
   const quality = actions.map((action) => ({ actionId: action.id, ...qualityCheckAction(action) }));
   const approvedActions = actions.filter((action) => quality.find((item) => item.actionId === action.id)?.approved);
