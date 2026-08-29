@@ -12,8 +12,8 @@ create table if not exists public.website_rebuild_requests (
 );
 
 alter table public.website_rebuild_requests enable row level security;
+drop policy if exists "users create own rebuild requests" on public.website_rebuild_requests;
+drop policy if exists "users read own rebuild requests" on public.website_rebuild_requests;
 create policy "users read own rebuild requests" on public.website_rebuild_requests for select using (auth.uid() = user_id);
-create policy "users create own rebuild requests" on public.website_rebuild_requests for insert with check (auth.uid() = user_id);
-
 create index if not exists website_rebuild_requests_session_idx on public.website_rebuild_requests(preview_session_id);
 create index if not exists website_rebuild_requests_user_idx on public.website_rebuild_requests(user_id);
