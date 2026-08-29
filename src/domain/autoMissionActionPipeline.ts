@@ -8,6 +8,7 @@ import { autoGenerateActionPlan, type AutoActionPlan } from "./autoActionPipelin
 export type AutoMissionActionResult = { missionId: string; actionPlan: AutoActionPlan };
 
 export async function autoBuildMissionToExecutionPlan(context: GrowthDecisionContext, signals: readonly OpportunitySignal[], actions: readonly GrowthAction[], store: MissionPersistence, _registry: CapabilityRegistry): Promise<AutoMissionActionResult> {
+  void _registry;
   const { mission } = await autoCreateMission(context, signals, actions, store);
   const actionPlan = autoGenerateActionPlan(context, mission);
   await store.saveActions(mission.id, actionPlan.actions);
