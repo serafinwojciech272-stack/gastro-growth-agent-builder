@@ -48,7 +48,7 @@ jobs:
       - name: Block client-side OpenRouter secrets
         shell: bash
         run: |
-          if git grep -n -E 'VITE_OPENROUTER_API_KEY|VITE_.*OPENROUTER.*KEY' -- ':!docs/*'; then
+          if git grep -n -E 'VITE_OPENROUTER_API_KEY|VITE_.*OPENROUTER.*KEY' -- ':!docs/*' ':!.github/workflows/quality-gate.yml'; then
             echo 'Client-side OpenRouter secrets are forbidden.'
             exit 1
           fi
