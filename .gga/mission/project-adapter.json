@@ -1,0 +1,22 @@
+{
+  "projectId": "gastro-growth-advisor",
+  "adapter": "gastro-growth-advisor",
+  "controlPlane": "shared Mission Engine",
+  "roadmap": ".gga/mission/roadmap.json",
+  "state": ".gga/mission/project-state.json",
+  "sourceRoots": ["app", "src", "components", "lib", "data"],
+  "validationCommands": [
+    "npx tsc -b --pretty false",
+    "npm run lint",
+    "npm run build"
+  ],
+  "protectedPaths": [".github", ".git", ".env", ".env.*"],
+  "forbiddenDomains": ["cue sports", "players", "tournaments", "cue equipment", "snooker", "billiards"],
+  "stateRules": [
+    "currentStage is canonical",
+    "applicationStage mirrors currentStage for compatibility",
+    "lastApprovedStage is monotonic",
+    "malformed state must fail closed and never reset progress",
+    "control-plane stage is independent from application stage"
+  ]
+}
