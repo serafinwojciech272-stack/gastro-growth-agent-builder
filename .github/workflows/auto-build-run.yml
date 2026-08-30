@@ -1,0 +1,189 @@
+name: GGA Autonomous Build Run
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Execution mode
+        required: true
+        default: full
+        type: choice
+        options: [quality, build, autonomous, full]
+      stage:
+        description: Optional Mission Engine stage
+        required: false
+        default: ''
+        type: string
+      force:
+        description: Force autonomous execution
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gga-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MAX_AUTO_RECOVERY_ATTEMPTS: 3
+
+jobs:
+  precheck:
+    name: Precheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Repository state
+        shell: bash
+        run: |
+          git status --short
+          git branch --show-current
+          git log -5 --oneline
+          test -f package.json
+          test -f package-lock.json
+      - name: Secret guard
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then
+            echo 'Committed environment files are forbidden.'
+            exit 1
+          fi
+          if git grep -n -E '(OPENROUTER_API_KEY|VITE_.*API_KEY|GITHUB_TOKEN)\s*[:=]' -- ':!docs/*' ':!.github/workflows/*'; then
+            echo 'Potential committed secret detected.'
+            exit 1
+          fi
+
+  build:
+    name: Build and Quality
+    needs: precheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npx tsc -b --pretty false
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Tests
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm test
+          else
+            echo 'No test script defined. Test gate skipped.'
+          fi
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: Build log
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git status --short > artifacts/git-status.txt
+          npm run lint > artifacts/lint.log 2>&1 || true
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gga-build-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore
+
+  agent:
+    name: Autonomous Agent
+    needs: build
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'autonomous' || inputs.mode == 'full')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Detect autonomous runner
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const p=require('./package.json');
+          const scripts=p.scripts||{};
+          if (scripts.autonomous) {
+            console.log('AUTONOMOUS_COMMAND=npm run autonomous');
+          } else {
+            console.log('AUTONOMOUS_COMMAND=NONE');
+          }
+          NODE
+      - name: Run autonomous mission
+        shell: bash
+        env:
+          GGA_STAGE: ${{ inputs.stage || '' }}
+          GGA_FORCE: ${{ inputs.force || false }}
+        run: |
+          if npm run | grep -qE '^  autonomous$'; then
+            npm run autonomous
+          else
+            echo 'No autonomous script exists in package.json. Agent execution skipped.'
+          fi
+      - name: Agent report
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git status --short > artifacts/agent-git-status.txt
+          git diff --stat > artifacts/agent-diff-stat.txt
+      - name: Upload agent artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gga-agent-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore
+
+  final-gate:
+    name: Final Gate
+    needs: [precheck, build, agent]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Final summary
+        shell: bash
+        run: |
+          {
+            echo '# GGA AUTONOMOUS CYCLE'
+            echo
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo "Branch: ${GITHUB_REF_NAME}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo "Build job: ${{ needs.build.result }}"
+            echo "Agent job: ${{ needs.agent.result }}"
+            echo "Recovery attempts limit: $MAX_AUTO_RECOVERY_ATTEMPTS"
+            echo
+            if [ '${{ needs.build.result }}' = 'success' ] && { [ '${{ needs.agent.result }}' = 'success' ] || [ '${{ needs.agent.result }}' = 'skipped' ]; }; then
+              echo 'Result: SUCCESS'
+            else
+              echo 'Result: FAILURE'
+              exit 1
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
