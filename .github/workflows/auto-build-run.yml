@@ -60,7 +60,7 @@ jobs:
           status=$(curl -sS -o /tmp/me-repo.json -w '%{http_code}' -H "Authorization: Bearer ${ENGINE_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "${url}")
           case "${status}" in
             200) echo 'MISSION_ENGINE_AUTH_GATE: AUTHENTICATION_PASS'; echo 'MISSION_ENGINE_REPOSITORY_ACCESS: PASS' ;;
-            401) echo 'MISSION_ENGINE_AUTH_GATE: AUTH_FAILED (HTTP 401)'; echo 'Diagnosis: GitHub rejected the supplied credential. Check that the token is valid, active, and not expired or revoked.'; exit 1 ;;
+            401) echo 'MISSION_ENGINE_AUTH_GATE: AUTH_FAILED (HTTP 401)'; echo 'Diagnosis: GitHub rejected the supplied credential.'; exit 1 ;;
             403) echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 403)'; echo 'Diagnosis: credential is accepted but access to the Mission Engine repository is denied.'; exit 1 ;;
             404) echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 404)'; echo 'Diagnosis: repository is unavailable to the supplied credential.'; exit 1 ;;
             *) echo "MISSION_ENGINE_AUTH_GATE: REQUEST_FAILED (HTTP ${status})"; echo 'Diagnosis: GitHub API returned an unexpected response.'; exit 1 ;;
@@ -90,6 +90,8 @@ jobs:
           git log -5 --oneline
           test -f package.json
           test -f package-lock.json
+          test -f .gga/mission/roadmap.json
+          test -f .gga/mission/project-adapter.json
       - name: Secret guard
         shell: bash
         run: |
@@ -156,7 +158,7 @@ jobs:
           GCS_TARGET_ROOT: ${{ github.workspace }}
           GCS_STATE_DIR: ${{ github.workspace }}/.gga/mission
           GCS_ROADMAP_FILE: ${{ github.workspace }}/.gga/mission/roadmap.json
-          GCS_CONTROL_PLANE_STAGE: 2
+          GCS_CONTROL_PLANE_STAGE: 4
         run: |
           npm run status
           npm run next
@@ -168,7 +170,7 @@ jobs:
           GCS_TARGET_ROOT: ${{ github.workspace }}
           GCS_STATE_DIR: ${{ github.workspace }}/.gga/mission
           GCS_ROADMAP_FILE: ${{ github.workspace }}/.gga/mission/roadmap.json
-          GCS_CONTROL_PLANE_STAGE: 2
+          GCS_CONTROL_PLANE_STAGE: 4
           GGA_STAGE: ${{ inputs.stage || '' }}
           GGA_FORCE: ${{ inputs.force || false }}
         run: npm run control-plane:cycle
