@@ -14,7 +14,7 @@ on:
         type: choice
         options: [quality, build, autonomous, full]
       stage:
-        description: Optional Mission Engine stage
+        description: Optional Mission Engine application stage
         required: false
         default: ''
         type: string
@@ -33,6 +33,7 @@ concurrency:
 
 env:
   MAX_AUTO_RECOVERY_ATTEMPTS: 3
+  MISSION_ENGINE_REPOSITORY: serafinwojciech272-stack/global-cue-sports-agent
 
 jobs:
   precheck:
@@ -109,49 +110,118 @@ jobs:
           if-no-files-found: ignore
 
   agent:
-    name: Autonomous Agent
+    name: Mission Engine Autonomous Agent
     needs: build
     if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'autonomous' || inputs.mode == 'full')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout GGA target
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 5
+          fetch-depth: 10
+          persist-credentials: true
+
+      - name: Require Mission Engine credential
+        shell: bash
+        env:
+          ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
+        run: |
+          if [ -z "$ENGINE_TOKEN" ]; then
+            echo 'MISSION_ENGINE_TOKEN is required because the Mission Engine repository is private.'
+            exit 1
+          fi
+
+      - name: Checkout Mission Engine
+        uses: actions/checkout@v4
+        with:
+          repository: serafinwojciech272-stack/global-cue-sports-agent
+          ref: main
+          token: ${{ secrets.MISSION_ENGINE_TOKEN }}
+          path: .mission-engine
+          fetch-depth: 1
+          persist-credentials: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Detect autonomous runner
-        shell: bash
-        run: |
-          node - <<'NODE'
-          const p=require('./package.json');
-          const scripts=p.scripts||{};
-          if (scripts.autonomous) {
-            console.log('AUTONOMOUS_COMMAND=npm run autonomous');
-          } else {
-            console.log('AUTONOMOUS_COMMAND=NONE');
-          }
-          NODE
-      - name: Run autonomous mission
-        shell: bash
+          cache-dependency-path: .mission-engine/package-lock.json
+
+      - name: Install Mission Engine
+        working-directory: .mission-engine
+        run: npm ci
+
+      - name: Mission Engine identity
+        working-directory: .mission-engine
         env:
+          GCS_PROJECT_ID: gastro-growth-advisor
+          GCS_TARGET_ROOT: ${{ github.workspace }}
+          GCS_STATE_DIR: ${{ github.workspace }}/.gga/mission
+          GCS_ROADMAP_FILE: ${{ github.workspace }}/.gga/mission/roadmap.json
+          GCS_CONTROL_PLANE_STAGE: 2
+        run: |
+          npm run status
+          npm run next
+          npm run plan
+
+      - name: Execute Mission Engine cycle
+        working-directory: .mission-engine
+        env:
+          GCS_PROJECT_ID: gastro-growth-advisor
+          GCS_TARGET_ROOT: ${{ github.workspace }}
+          GCS_STATE_DIR: ${{ github.workspace }}/.gga/mission
+          GCS_ROADMAP_FILE: ${{ github.workspace }}/.gga/mission/roadmap.json
+          GCS_CONTROL_PLANE_STAGE: 2
           GGA_STAGE: ${{ inputs.stage || '' }}
           GGA_FORCE: ${{ inputs.force || false }}
+        run: npm run control-plane:cycle
+
+      - name: Revalidate target after Mission Engine
         run: |
-          if npm run | grep -qE '^  autonomous$'; then
-            npm run autonomous
-          else
-            echo 'No autonomous script exists in package.json. Agent execution skipped.'
+          npx tsc -b --pretty false
+          npm run lint
+          npm run build
+
+      - name: Git safety gate
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then
+            echo 'Refusing to commit environment files.'
+            exit 1
           fi
+          if git diff --name-only | grep -E '(^|/)(node_modules|\.next|dist|build)(/|$)'; then
+            echo 'Refusing to commit build artifacts.'
+            exit 1
+          fi
+          git status --short
+          git diff --check
+
+      - name: Commit Mission Engine changes
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo 'No target changes produced by Mission Engine.'
+            exit 0
+          fi
+          git config user.name 'gga-mission-engine[bot]'
+          git config user.email 'gga-mission-engine@users.noreply.github.com'
+          git add .gga src app public index.html package.json package-lock.json README.md docs 2>/dev/null || true
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: autonomous Mission Engine cycle"
+          git push origin HEAD:main
+
       - name: Agent report
         if: always()
         run: |
           mkdir -p artifacts
           git status --short > artifacts/agent-git-status.txt
-          git diff --stat > artifacts/agent-diff-stat.txt
+          git diff HEAD~1 --stat > artifacts/agent-diff-stat.txt 2>/dev/null || true
+          if [ -f .gga/mission/project-state.json ]; then cp .gga/mission/project-state.json artifacts/project-state.json; fi
+          if [ -f .gga/mission/stage-history.jsonl ]; then cp .gga/mission/stage-history.jsonl artifacts/stage-history.jsonl; fi
       - name: Upload agent artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -177,7 +247,7 @@ jobs:
             echo "Branch: ${GITHUB_REF_NAME}"
             echo "Commit: ${GITHUB_SHA}"
             echo "Build job: ${{ needs.build.result }}"
-            echo "Agent job: ${{ needs.agent.result }}"
+            echo "Mission Engine job: ${{ needs.agent.result }}"
             echo "Recovery attempts limit: $MAX_AUTO_RECOVERY_ATTEMPTS"
             echo
             if [ '${{ needs.build.result }}' = 'success' ] && { [ '${{ needs.agent.result }}' = 'success' ] || [ '${{ needs.agent.result }}' = 'skipped' ]; }; then
