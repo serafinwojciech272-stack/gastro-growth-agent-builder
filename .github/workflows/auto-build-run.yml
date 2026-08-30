@@ -1,5 +1,4 @@
 name: GGA Autonomous Build Run
-
 on:
   push:
     branches: [main]
@@ -23,22 +22,14 @@ on:
         required: true
         default: false
         type: boolean
-
 permissions:
   contents: read
-
 concurrency:
   group: gga-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 env:
   MAX_AUTO_RECOVERY_ATTEMPTS: 3
   MISSION_ENGINE_REPOSITORY: serafinwojciech272-stack/global-cue-sports-agent
-
-env:
-  MAX_AUTO_RECOVERY_ATTEMPTS: 3
-  MISSION_ENGINE_REPOSITORY: serafinwojciech272-stack/global-cue-sports-agent
-
 jobs:
   mission-engine-auth:
     name: Mission Engine Auth Gate
@@ -58,7 +49,6 @@ jobs:
             exit 1
           fi
           echo 'MISSION_ENGINE_AUTH_GATE: PRESENT'
-
       - name: Validate Mission Engine repository authentication
         if: steps.presence.outcome == 'success'
         shell: bash
@@ -67,39 +57,14 @@ jobs:
         run: |
           set -euo pipefail
           url="https://api.github.com/repos/${MISSION_ENGINE_REPOSITORY}"
-          status=$(curl -sS -o /tmp/me-repo.json -w '%{http_code}' \
-            -H "Authorization: Bearer ${ENGINE_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "${url}")
-
+          status=$(curl -sS -o /tmp/me-repo.json -w '%{http_code}' -H "Authorization: Bearer ${ENGINE_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "${url}")
           case "${status}" in
-            200)
-              echo 'MISSION_ENGINE_AUTH_GATE: AUTHENTICATION_PASS'
-              echo 'MISSION_ENGINE_REPOSITORY_ACCESS: PASS'
-              ;;
-            401)
-              echo 'MISSION_ENGINE_AUTH_GATE: AUTH_FAILED (HTTP 401)'
-              echo 'Diagnosis: GitHub rejected the supplied credential. Check that the token is valid, active, and not expired or revoked.'
-              exit 1
-              ;;
-            403)
-              echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 403)'
-              echo 'Diagnosis: credential is accepted but access to the Mission Engine repository is denied.'
-              exit 1
-              ;;
-            404)
-              echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 404)'
-              echo 'Diagnosis: repository is unavailable to the supplied credential.'
-              exit 1
-              ;;
-            *)
-              echo "MISSION_ENGINE_AUTH_GATE: REQUEST_FAILED (HTTP ${status})"
-              echo 'Diagnosis: GitHub API returned an unexpected response.'
-              exit 1
-              ;;
+            200) echo 'MISSION_ENGINE_AUTH_GATE: AUTHENTICATION_PASS'; echo 'MISSION_ENGINE_REPOSITORY_ACCESS: PASS' ;;
+            401) echo 'MISSION_ENGINE_AUTH_GATE: AUTH_FAILED (HTTP 401)'; echo 'Diagnosis: GitHub rejected the supplied credential. Check that the token is valid, active, and not expired or revoked.'; exit 1 ;;
+            403) echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 403)'; echo 'Diagnosis: credential is accepted but access to the Mission Engine repository is denied.'; exit 1 ;;
+            404) echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 404)'; echo 'Diagnosis: repository is unavailable to the supplied credential.'; exit 1 ;;
+            *) echo "MISSION_ENGINE_AUTH_GATE: REQUEST_FAILED (HTTP ${status})"; echo 'Diagnosis: GitHub API returned an unexpected response.'; exit 1 ;;
           esac
-
       - name: Verify Mission Engine main ref
         shell: bash
         env:
@@ -107,26 +72,17 @@ jobs:
         run: |
           set -euo pipefail
           url="https://api.github.com/repos/${MISSION_ENGINE_REPOSITORY}/git/ref/heads/main"
-          status=$(curl -sS -o /tmp/me-ref.json -w '%{http_code}' \
-            -H "Authorization: Bearer ${ENGINE_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "${url}")
-          if [ "${status}" != '200' ]; then
-            echo "MISSION_ENGINE_REF_ACCESS_FAILED: main returned HTTP ${status}"
-            exit 1
-          fi
+          status=$(curl -sS -o /tmp/me-ref.json -w '%{http_code}' -H "Authorization: Bearer ${ENGINE_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "${url}")
+          if [ "${status}" != '200' ]; then echo "MISSION_ENGINE_REF_ACCESS_FAILED: main returned HTTP ${status}"; exit 1; fi
           echo 'MISSION_ENGINE_REF_ACCESS: PASS (main)'
           echo 'MISSION_ENGINE_AUTH_GATE: PASS'
-
   precheck:
     name: Precheck
     needs: mission-engine-auth
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 5
+        with: {fetch-depth: 5}
       - name: Repository state
         run: |
           git status --short
@@ -139,7 +95,6 @@ jobs:
         run: |
           if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then exit 1; fi
           if git grep -n -E '(OPENROUTER_API_KEY|VITE_.*API_KEY|GITHUB_TOKEN)\s*[:=]' -- ':!docs/*' ':!.github/workflows/*'; then exit 1; fi
-
   build:
     name: Build and Quality
     needs: precheck
@@ -163,7 +118,6 @@ jobs:
           if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then npm test; else echo 'No test script defined. Test gate skipped.'; fi
       - name: Dependency audit
         run: npm audit --audit-level=high
-
   agent:
     name: Mission Engine Autonomous Agent
     needs: [precheck, build, mission-engine-auth]
@@ -239,7 +193,6 @@ jobs:
           git diff --cached --check
           git commit -m "feat: autonomous Mission Engine cycle"
           git push origin HEAD:main
-
   final-gate:
     name: Final Gate
     needs: [mission-engine-auth, precheck, build, agent]
@@ -259,5 +212,5 @@ jobs:
             echo "Build job: ${{ needs.build.result }}"
             echo "Mission Engine job: ${{ needs.agent.result }}"
             echo "Recovery attempts limit: $MAX_AUTO_RECOVERY_ATTEMPTS"
-            if [ '${{ needs.mission-engine-auth.result }}' = 'success' ] && [ '${{ needs.build.result }}' = 'success' ] && { [ '${{ needs.agent.result }}' = 'success' ] || [ '${{ needs.agent.result }}' = 'skipped' ]; }; then echo 'Result: SUCCESS'; else echo 'Result: FAILURE'; exit 1; fi
+            if [ '${{ needs.mission-engine-auth.result }}' = 'success' ] && [ '${{ needs.build.result }}' = 'success' ] && [ '${{ needs.agent.result }}' = 'success' ]; then echo 'Result: SUCCESS'; else echo 'Result: FAILURE'; exit 1; fi
           } >> "$GITHUB_STEP_SUMMARY"
