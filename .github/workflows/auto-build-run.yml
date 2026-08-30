@@ -35,55 +35,88 @@ env:
   MAX_AUTO_RECOVERY_ATTEMPTS: 3
   MISSION_ENGINE_REPOSITORY: serafinwojciech272-stack/global-cue-sports-agent
 
+env:
+  MAX_AUTO_RECOVERY_ATTEMPTS: 3
+  MISSION_ENGINE_REPOSITORY: serafinwojciech272-stack/global-cue-sports-agent
+
 jobs:
   mission-engine-auth:
     name: Mission Engine Auth Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Validate credential presence
+        id: presence
         shell: bash
         env:
           ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
         run: |
-          if [ -z "$ENGINE_TOKEN" ]; then
+          set -euo pipefail
+          if [ -z "${ENGINE_TOKEN}" ]; then
             echo 'MISSION_ENGINE_AUTH_GATE: MISSING'
-            echo 'Required secret: MISSION_ENGINE_TOKEN'
+            echo 'MISSION_ENGINE_TOKEN is not configured as a repository Actions secret.'
             exit 1
           fi
           echo 'MISSION_ENGINE_AUTH_GATE: PRESENT'
-      - name: Validate GitHub authentication
+
+      - name: Validate Mission Engine repository authentication
+        if: steps.presence.outcome == 'success'
         shell: bash
         env:
           ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
         run: |
-          status=$(curl -sS -o /tmp/me-user.json -w '%{http_code}' -H "Authorization: Bearer $ENGINE_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/user)
-          if [ "$status" != "200" ]; then
-            echo "MISSION_ENGINE_AUTH_GATE: AUTH_FAILED (HTTP $status)"
-            exit 1
-          fi
-          echo 'MISSION_ENGINE_AUTH_GATE: AUTHENTICATION_PASS'
-      - name: Validate Mission Engine repository access
+          set -euo pipefail
+          url="https://api.github.com/repos/${MISSION_ENGINE_REPOSITORY}"
+          status=$(curl -sS -o /tmp/me-repo.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${ENGINE_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "${url}")
+
+          case "${status}" in
+            200)
+              echo 'MISSION_ENGINE_AUTH_GATE: AUTHENTICATION_PASS'
+              echo 'MISSION_ENGINE_REPOSITORY_ACCESS: PASS'
+              ;;
+            401)
+              echo 'MISSION_ENGINE_AUTH_GATE: AUTH_FAILED (HTTP 401)'
+              echo 'Diagnosis: GitHub rejected the supplied credential. Check that the token is valid, active, and not expired or revoked.'
+              exit 1
+              ;;
+            403)
+              echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 403)'
+              echo 'Diagnosis: credential is accepted but access to the Mission Engine repository is denied.'
+              exit 1
+              ;;
+            404)
+              echo 'MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP 404)'
+              echo 'Diagnosis: repository is unavailable to the supplied credential.'
+              exit 1
+              ;;
+            *)
+              echo "MISSION_ENGINE_AUTH_GATE: REQUEST_FAILED (HTTP ${status})"
+              echo 'Diagnosis: GitHub API returned an unexpected response.'
+              exit 1
+              ;;
+          esac
+
+      - name: Verify Mission Engine main ref
         shell: bash
         env:
           ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
         run: |
-          status=$(curl -sS -o /tmp/me-repo.json -w '%{http_code}' -H "Authorization: Bearer $ENGINE_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${MISSION_ENGINE_REPOSITORY}")
-          if [ "$status" != "200" ]; then
-            echo "MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_FAILED (HTTP $status)"
+          set -euo pipefail
+          url="https://api.github.com/repos/${MISSION_ENGINE_REPOSITORY}/git/ref/heads/main"
+          status=$(curl -sS -o /tmp/me-ref.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${ENGINE_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "${url}")
+          if [ "${status}" != '200' ]; then
+            echo "MISSION_ENGINE_REF_ACCESS_FAILED: main returned HTTP ${status}"
             exit 1
           fi
-          echo "MISSION_ENGINE_AUTH_GATE: REPOSITORY_ACCESS_PASS"
-      - name: Validate Mission Engine main ref
-        shell: bash
-        env:
-          ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
-        run: |
-          status=$(curl -sS -o /tmp/me-ref.json -w '%{http_code}' -H "Authorization: Bearer $ENGINE_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${MISSION_ENGINE_REPOSITORY}/git/ref/heads/main")
-          if [ "$status" != "200" ]; then
-            echo "MISSION_ENGINE_AUTH_GATE: REF_ACCESS_FAILED (HTTP $status)"
-            exit 1
-          fi
-          echo 'MISSION_ENGINE_AUTH_GATE: REF_ACCESS_PASS'
+          echo 'MISSION_ENGINE_REF_ACCESS: PASS (main)'
           echo 'MISSION_ENGINE_AUTH_GATE: PASS'
 
   precheck:
