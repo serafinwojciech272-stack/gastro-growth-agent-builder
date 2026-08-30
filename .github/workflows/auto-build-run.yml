@@ -43,12 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
       - name: Repository state
-        shell: bash
         run: |
           git status --short
           git branch --show-current
@@ -58,14 +53,8 @@ jobs:
       - name: Secret guard
         shell: bash
         run: |
-          if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then
-            echo 'Committed environment files are forbidden.'
-            exit 1
-          fi
-          if git grep -n -E '(OPENROUTER_API_KEY|VITE_.*API_KEY|GITHUB_TOKEN)\s*[:=]' -- ':!docs/*' ':!.github/workflows/*'; then
-            echo 'Potential committed secret detected.'
-            exit 1
-          fi
+          if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then exit 1; fi
+          if git grep -n -E '(OPENROUTER_API_KEY|VITE_.*API_KEY|GITHUB_TOKEN)\s*[:=]' -- ':!docs/*' ':!.github/workflows/*'; then exit 1; fi
 
   build:
     name: Build and Quality
@@ -77,8 +66,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
       - name: TypeScript
         run: npx tsc -b --pretty false
       - name: Lint
@@ -88,30 +76,13 @@ jobs:
       - name: Tests
         shell: bash
         run: |
-          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            npm test
-          else
-            echo 'No test script defined. Test gate skipped.'
-          fi
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then npm test; else echo 'No test script defined. Test gate skipped.'; fi
       - name: Dependency audit
         run: npm audit --audit-level=high
-      - name: Build log
-        if: always()
-        run: |
-          mkdir -p artifacts
-          git status --short > artifacts/git-status.txt
-          npm run lint > artifacts/lint.log 2>&1 || true
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gga-build-${{ github.run_id }}
-          path: artifacts/
-          if-no-files-found: ignore
 
   agent:
     name: Mission Engine Autonomous Agent
-    needs: build
+    needs: [precheck, build, mission-engine-auth]
     if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'autonomous' || inputs.mode == 'full')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -123,17 +94,6 @@ jobs:
         with:
           fetch-depth: 10
           persist-credentials: true
-
-      - name: Require Mission Engine credential
-        shell: bash
-        env:
-          ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
-        run: |
-          if [ -z "$ENGINE_TOKEN" ]; then
-            echo 'MISSION_ENGINE_TOKEN is required because the Mission Engine repository is private.'
-            exit 1
-          fi
-
       - name: Checkout Mission Engine
         uses: actions/checkout@v4
         with:
@@ -143,17 +103,14 @@ jobs:
           path: .mission-engine
           fetch-depth: 1
           persist-credentials: false
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: .mission-engine/package-lock.json
-
       - name: Install Mission Engine
         working-directory: .mission-engine
         run: npm ci
-
       - name: Mission Engine identity
         working-directory: .mission-engine
         env:
@@ -166,7 +123,6 @@ jobs:
           npm run status
           npm run next
           npm run plan
-
       - name: Execute Mission Engine cycle
         working-directory: .mission-engine
         env:
@@ -178,57 +134,27 @@ jobs:
           GGA_STAGE: ${{ inputs.stage || '' }}
           GGA_FORCE: ${{ inputs.force || false }}
         run: npm run control-plane:cycle
-
-      - name: Revalidate target after Mission Engine
+      - name: Revalidate target
         run: |
           npx tsc -b --pretty false
           npm run lint
           npm run build
-
       - name: Git safety gate
         shell: bash
         run: |
-          if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then
-            echo 'Refusing to commit environment files.'
-            exit 1
-          fi
-          if git diff --name-only | grep -E '(^|/)(node_modules|\.next|dist|build)(/|$)'; then
-            echo 'Refusing to commit build artifacts.'
-            exit 1
-          fi
-          git status --short
+          if git ls-files | grep -E '(^|/)(\.env|\.env\..*)$' | grep -vE '\.env\.example$'; then exit 1; fi
+          if git diff --name-only | grep -E '(^|/)(node_modules|\.next|dist|build)(/|$)'; then exit 1; fi
           git diff --check
-
       - name: Commit Mission Engine changes
         shell: bash
         run: |
-          if [ -z "$(git status --porcelain)" ]; then
-            echo 'No target changes produced by Mission Engine.'
-            exit 0
-          fi
+          if [ -z "$(git status --porcelain)" ]; then echo 'No target changes produced by Mission Engine.'; exit 0; fi
           git config user.name 'gga-mission-engine[bot]'
           git config user.email 'gga-mission-engine@users.noreply.github.com'
-          git add .gga src app public index.html package.json package-lock.json README.md docs 2>/dev/null || true
           git add -A
           git diff --cached --check
           git commit -m "feat: autonomous Mission Engine cycle"
           git push origin HEAD:main
-
-      - name: Agent report
-        if: always()
-        run: |
-          mkdir -p artifacts
-          git status --short > artifacts/agent-git-status.txt
-          git diff HEAD~1 --stat > artifacts/agent-diff-stat.txt 2>/dev/null || true
-          if [ -f .gga/mission/project-state.json ]; then cp .gga/mission/project-state.json artifacts/project-state.json; fi
-          if [ -f .gga/mission/stage-history.jsonl ]; then cp .gga/mission/stage-history.jsonl artifacts/stage-history.jsonl; fi
-      - name: Upload agent artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gga-agent-${{ github.run_id }}
-          path: artifacts/
-          if-no-files-found: ignore
 
   final-gate:
     name: Final Gate
@@ -242,18 +168,11 @@ jobs:
         run: |
           {
             echo '# GGA AUTONOMOUS CYCLE'
-            echo
             echo "Repository: $GITHUB_REPOSITORY"
             echo "Branch: ${GITHUB_REF_NAME}"
             echo "Commit: ${GITHUB_SHA}"
             echo "Build job: ${{ needs.build.result }}"
             echo "Mission Engine job: ${{ needs.agent.result }}"
             echo "Recovery attempts limit: $MAX_AUTO_RECOVERY_ATTEMPTS"
-            echo
-            if [ '${{ needs.build.result }}' = 'success' ] && { [ '${{ needs.agent.result }}' = 'success' ] || [ '${{ needs.agent.result }}' = 'skipped' ]; }; then
-              echo 'Result: SUCCESS'
-            else
-              echo 'Result: FAILURE'
-              exit 1
-            fi
+            if [ '${{ needs.build.result }}' = 'success' ] && { [ '${{ needs.agent.result }}' = 'success' ] || [ '${{ needs.agent.result }}' = 'skipped' ]; }; then echo 'Result: SUCCESS'; else echo 'Result: FAILURE'; exit 1; fi
           } >> "$GITHUB_STEP_SUMMARY"
