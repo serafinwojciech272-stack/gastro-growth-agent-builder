@@ -1,0 +1,87 @@
+name: GGA Mission Engine Auth Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gga-mission-engine-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-check:
+    name: Validate Mission Engine credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check token presence
+        id: presence
+        shell: bash
+        env:
+          MISSION_ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MISSION_ENGINE_TOKEN}" ]; then
+            echo 'MISSION_ENGINE_TOKEN_STATUS=MISSING' >> "$GITHUB_OUTPUT"
+            echo 'MISSION_ENGINE_TOKEN: MISSING' >> "$GITHUB_STEP_SUMMARY"
+            echo 'MISSION_ENGINE_AUTH_FAILED: secret is not configured.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo 'MISSION_ENGINE_TOKEN_STATUS=PRESENT' >> "$GITHUB_OUTPUT"
+          echo 'MISSION_ENGINE_TOKEN: PRESENT' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Authenticate against Mission Engine repository
+        if: steps.presence.outputs.MISSION_ENGINE_TOKEN_STATUS == 'PRESENT'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
+        run: |
+          set -euo pipefail
+          api='https://api.github.com/repos/serafinwojciech272-stack/global-cue-sports-agent'
+          response="$(curl -fsS -w '\n%{http_code}' -H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' "$api")" || {
+            echo 'MISSION_ENGINE_AUTH_FAILED: GitHub API authentication/request failed.'
+            exit 1
+          }
+          status="$(printf '%s\n' "$response" | tail -n1)"
+          body="$(printf '%s\n' "$response" | sed '$d')"
+          case "$status" in
+            200)
+              echo 'MISSION_ENGINE_AUTH: PASS' >> "$GITHUB_STEP_SUMMARY"
+              echo 'MISSION_ENGINE_REPOSITORY_ACCESS: PASS' >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            401)
+              echo 'MISSION_ENGINE_AUTH_FAILED: token rejected by GitHub.' >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            403|404)
+              echo 'MISSION_ENGINE_REPOSITORY_ACCESS_FAILED: token lacks access to the private Mission Engine repository.' >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            *)
+              echo "MISSION_ENGINE_AUTH_FAILED: GitHub returned HTTP ${status}." >> "$GITHUB_STEP_SUMMARY"
+              printf '%s\n' "$body" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("message","unknown GitHub API error"))' 2>/dev/null || true
+              exit 1
+              ;;
+          esac
+
+      - name: Verify Mission Engine main ref
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -w '\n%{http_code}' -H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/serafinwojciech272-stack/global-cue-sports-agent/branches/main')" || {
+            echo 'MISSION_ENGINE_REF_ACCESS_FAILED: unable to read main branch.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          status="$(printf '%s\n' "$response" | tail -n1)"
+          if [ "$status" != '200' ]; then
+            echo "MISSION_ENGINE_REF_ACCESS_FAILED: main returned HTTP ${status}." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo 'MISSION_ENGINE_REF_ACCESS: PASS (main)' >> "$GITHUB_STEP_SUMMARY"
+          echo 'MISSION_ENGINE_AUTH_GATE: PASS' >> "$GITHUB_STEP_SUMMARY"
