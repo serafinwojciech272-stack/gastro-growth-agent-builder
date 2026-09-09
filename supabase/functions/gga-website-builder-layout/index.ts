@@ -5,7 +5,6 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 
 type Stage = 'AI Layout Generation' | 'Component Generation' | 'Responsive Renderer';
 type Project = { id:string; user_id:string; artifacts:Record<string,unknown>; version:number; active_stage:number; completed_stages:number[]; };
-
 const STAGES: Stage[] = ['AI Layout Generation','Component Generation','Responsive Renderer'];
 const COMPONENTS = ['SiteHeader','Hero','Proof','FeatureGrid','Offer','Media','Timeline','Faq','Venue','About','Testimonials','Contact','Cta','Footer','Gallery','Stats'] as const;
 
@@ -27,14 +26,14 @@ Deno.serve(async (req) => {
     if(!STAGES.includes(stage)) return json({error:'Unsupported layout stage'},400,cors);
     const projectId=typeof body.projectId==='string'?body.projectId:'';
     if(!projectId) return json({error:'projectId is required'},400,cors);
-    const found=await sb.from('website_builder_projects').select('*').eq('id',projectId).single();
+    const found=await sb.from('website_builder_projects').select('*').eq('id',projectId).eq('user_id',user.id).single();
     if(found.error) throw found.error;
     const project=found.data as Project;
     const result=await run(stage,project);
-    const index=11-STAGES.length+STAGES.indexOf(stage);
+    const index=8+STAGES.indexOf(stage);
     const artifacts={...project.artifacts,[stage]:result.artifact};
     const completed=Array.from(new Set([...(project.completed_stages??[]),index])).sort((a,b)=>a-b);
-    const updated=await sb.from('website_builder_projects').update({artifacts,active_stage:Math.min(index+1,10),completed_stages:completed,status:'ready',version:project.version+1}).eq('id',project.id).select('*').single();
+    const updated=await sb.from('website_builder_projects').update({artifacts,active_stage:Math.min(index+1,10),completed_stages:completed,status:'ready',version:project.version+1}).eq('id',project.id).eq('user_id',user.id).select('*').single();
     if(updated.error) throw updated.error;
     return json({project:updated.data,stage,artifact:result.artifact,quality:result.quality},200,cors);
   } catch(error) { console.error('layout engine',error); return json({error:error instanceof Error?error.message:'Layout engine failed'},502,cors); }
@@ -58,11 +57,19 @@ async function run(stage:Stage,p:Project){
     const layout=p.artifacts['AI Layout Generation'];
     if(!layout) throw new Error('AI Layout Generation must exist first');
     const pages=Array.isArray((layout as Record<string,unknown>).pages)?(layout as Record<string,unknown>).pages:[];
-    const nodes=pages.flatMap((page)=>isRecord(page)&&Array.isArray(page.nodes)?page.nodes:[]);
-    const manifest=nodes.map((node,index)=>{const n=isRecord(node)?node:{};const requested=typeof n.component==='string'?n.component:'';const component=COMPONENTS.includes(requested as typeof COMPONENTS[number])?requested:'FeatureGrid';return {id:typeof n.id==='string'?n.id:`node-${index+1}`,component,props:{contentRefs:Array.isArray(n.contentRefs)?n.contentRefs.slice(0,20):[],variant:typeof n.variant==='string'?n.variant:'default'},accessibility:{landmark:component==='SiteHeader'?'header':component==='Footer'?'contentinfo':component==='Hero'?'region':'region',headingLevel:component==='Hero'?1:2}};});
-    const artifact={schemaVersion:'1.0',type:'component-manifest',registryVersion:'1.0',allowedComponents:[...COMPONENTS],pages:pages.map((page,index)=>({id:isRecord(page)&&typeof page.id==='string'?page.id:`page-${index+1}`,path:isRecord(page)&&typeof page.path==='string'?page.path:'/',nodes:manifest.slice(index*0,manifest.length)}))};
+    const componentPages=pages.map((page,pageIndex)=>{
+      const pageRecord=isRecord(page)?page:{};
+      const pageNodes=Array.isArray(pageRecord.nodes)?pageRecord.nodes:[];
+      return {id:typeof pageRecord.id==='string'?pageRecord.id:`page-${pageIndex+1}`,path:typeof pageRecord.path==='string'?pageRecord.path:'/',nodes:pageNodes.map((node,index)=>{
+        const n=isRecord(node)?node:{};
+        const requested=typeof n.component==='string'?n.component:'';
+        const component=COMPONENTS.includes(requested as typeof COMPONENTS[number])?requested:'FeatureGrid';
+        return {id:typeof n.id==='string'?n.id:`node-${pageIndex+1}-${index+1}`,component,props:{contentRefs:Array.isArray(n.contentRefs)?n.contentRefs.filter((x):x is string=>typeof x==='string').slice(0,20):[],variant:typeof n.variant==='string'?n.variant:'default'},accessibility:{landmark:component==='SiteHeader'?'banner':component==='Footer'?'contentinfo':'region',headingLevel:component==='Hero'?1:2}};
+      })};
+    });
+    const artifact={schemaVersion:'1.0',type:'component-manifest',registryVersion:'1.0',allowedComponents:[...COMPONENTS],pages:componentPages};
     const q=evaluateStructuredOutput(artifact,{required:['schemaVersion','type','registryVersion','allowedComponents','pages'],arrays:['allowedComponents','pages'],minItems:{allowedComponents:5,pages:1}});
-    return {artifact,quality:{score:q.score,gate:'PASS'}};
+    return {artifact,quality:{score:q.score,gate:q.score>=90?'PASS':'PASS_WITH_WARNINGS'}};
   }
   const manifest=p.artifacts['Component Generation'];
   if(!manifest) throw new Error('Component Generation must exist first');
