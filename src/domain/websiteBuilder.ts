@@ -13,40 +13,42 @@ export const WEBSITE_BUILDER_STAGES = [
 ] as const;
 
 export type WebsiteBuilderStage = typeof WEBSITE_BUILDER_STAGES[number];
+export type WebsiteBuilderStatus = 'draft' | 'running' | 'ready' | 'blocked' | 'published';
+
+export type WebsiteBuilderArtifact = {
+  schemaVersion: string;
+  type: string;
+  [key: string]: unknown;
+};
 
 export type WebsiteBuilderProject = {
   id: string;
+  organization_id?: string;
+  user_id?: string;
   name: string;
-  sourceUrl: string;
+  source_url: string;
   vertical: string;
   goal: string;
-  createdAt: string;
-};
-
-export type WebsiteBuilderArtifact = {
-  label: string;
-  value: string;
-  status: 'ready' | 'pending' | 'blocked';
+  status: WebsiteBuilderStatus;
+  active_stage: number;
+  completed_stages: number[];
+  artifacts: Record<string, WebsiteBuilderArtifact>;
+  source_snapshot?: Record<string, unknown> | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export const WEBSITE_BUILDER_STAGE_DESCRIPTIONS: Record<WebsiteBuilderStage, string> = {
   Project: 'Define the project, source, vertical and conversion objective.',
-  'Brand Extraction': 'Extract brand signals, positioning, visual language and trust evidence.',
-  'Content Intelligence': 'Structure factual content, entities, claims, CTAs and content gaps.',
-  'Page Architecture': 'Turn the business model into a conversion-first page tree and section schema.',
-  'Visual Direction': 'Define typography, color, density, imagery direction, motion and interaction rules.',
-  'AI Layout Generation': 'Generate a page layout from the approved content and visual system.',
-  'Component Generation': 'Map the layout to reusable production components and variants.',
-  'Responsive Renderer': 'Render desktop, tablet and mobile states from one component model.',
-  Preview: 'Provide an interactive preview with viewport controls and artifact inspection.',
-  QA: 'Run structural, accessibility, responsive, content and runtime quality checks.',
-  Publish: 'Prepare a production build and release only after the quality gates pass.',
+  'Brand Extraction': 'Extract source-grounded brand signals, positioning, visual language and trust evidence.',
+  'Content Intelligence': 'Structure facts, entities, claims, CTAs, FAQs, gaps and explicitly proposed copy.',
+  'Page Architecture': 'Turn content into a deterministic page and section schema.',
+  'Visual Direction': 'Define typography, color, spacing, density, imagery, motion and responsive tokens.',
+  'AI Layout Generation': 'Generate a constrained layout tree from approved content and visual tokens.',
+  'Component Generation': 'Map layout nodes to a controlled production component registry.',
+  'Responsive Renderer': 'Render desktop, tablet and mobile states from one schema.',
+  Preview: 'Provide an interactive browser preview with viewport controls and artifact inspection.',
+  QA: 'Run accessibility, responsive, links, content and runtime quality checks.',
+  Publish: 'Release only after all production gates pass, with rollback metadata.',
 };
-
-export function createWebsiteBuilderProject(input: Omit<WebsiteBuilderProject, 'id' | 'createdAt'>): WebsiteBuilderProject {
-  return {
-    ...input,
-    id: `wb_${Date.now().toString(36)}`,
-    createdAt: new Date().toISOString(),
-  };
-}
