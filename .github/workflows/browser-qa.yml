@@ -8,8 +8,6 @@ on:
         required: true
         default: https://gastro-growth-agent-builder-k6npnzmjd.vercel.app
         type: string
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -20,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      PLAYWRIGHT_BASE_URL: ${{ inputs.base_url || 'https://gastro-growth-agent-builder.vercel.app' }}
+      PLAYWRIGHT_BASE_URL: ${{ inputs.base_url }}
       PLAYWRIGHT_EMAIL: ${{ secrets.PLAYWRIGHT_EMAIL }}
       PLAYWRIGHT_PASSWORD: ${{ secrets.PLAYWRIGHT_PASSWORD }}
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
