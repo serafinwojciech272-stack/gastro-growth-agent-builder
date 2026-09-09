@@ -1,0 +1,46 @@
+name: Website Builder Browser QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Deployment URL to test
+        required: true
+        default: https://gastro-growth-agent-builder-k6npnzmjd.vercel.app
+        type: string
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  browser-qa:
+    name: Real browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_BASE_URL: ${{ inputs.base_url || 'https://gastro-growth-agent-builder.vercel.app' }}
+      PLAYWRIGHT_EMAIL: ${{ secrets.PLAYWRIGHT_EMAIL }}
+      PLAYWRIGHT_PASSWORD: ${{ secrets.PLAYWRIGHT_PASSWORD }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx -y playwright@1.55.0 install --with-deps chromium
+      - name: Run authenticated Builder smoke
+        run: npm run test:e2e -- tests/website-builder-smoke.spec.ts --project=chromium-desktop --project=chromium-tablet --project=chromium-mobile
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-builder-browser-qa
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
