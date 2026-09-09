@@ -20,24 +20,19 @@ test.describe('Growth Advisor Website Builder smoke', () => {
     await page.waitForURL('**/app/dashboard', { timeout: 30_000 });
 
     await page.goto('/app/website-builder');
-    await expect(page.getByRole('heading', { name: /Website Builder/i })).toBeVisible();
+    await expect(page.getByText('Growth Advisor Website Builder', { exact: true }).first()).toBeVisible();
 
-    const sourceUrl = page.getByLabel(/website url|source url/i).first();
-    if (await sourceUrl.count()) {
-      await sourceUrl.fill('https://example.com');
-    }
+    await page.getByLabel('Project name').fill('Browser QA Smoke');
+    await page.getByLabel('Source website').fill('https://example.com');
+    await page.getByRole('button', { name: 'Create project' }).click();
 
-    const createButton = page.getByRole('button', { name: /create|start|build/i }).first();
-    if (await createButton.count()) await createButton.click();
-
-    await expect(page.getByText(/Brand Extraction|Project/i).first()).toBeVisible();
+    await expect(page.getByText('Project', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Run Brand Extraction/i })).toBeVisible();
 
     for (const viewport of ['Desktop', 'Tablet', 'Mobile']) {
-      const button = page.getByRole('button', { name: new RegExp(viewport, 'i') }).first();
-      if (await button.count()) {
-        await button.click();
-        await expect(button).toBeVisible();
-      }
+      const button = page.getByRole('button', { name: viewport });
+      await expect(button).toBeVisible();
+      await button.click();
     }
 
     await page.screenshot({ path: `test-results/builder-${test.info().project.name}.png`, fullPage: true });
