@@ -30,13 +30,14 @@ export default function AuthPage() {
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     if (mode === 'signup') { setMessage('Account created. If email confirmation is enabled, check your inbox.'); setPassword(''); setConfirmPassword(''); return; }
-    navigate('/app/dashboard', { replace: true });
+    const next = params.get('next');
+    navigate(next && next.startsWith('/') ? next : '/app/dashboard', { replace: true });
   }
 
   async function handleReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); clearFeedback();
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) { setError('Enter your email address.'); return; }
+    if (!normalizedEmail) { setError('Enter your account email.'); return; }
     setBusy(true);
     const result = await resetPasswordForEmail(normalizedEmail);
     setBusy(false);
