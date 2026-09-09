@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL || process.env.BASE_URL;
+const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 export default defineConfig({
   testDir: './tests',
@@ -13,6 +14,7 @@ export default defineConfig({
   reporter: [['html', { outputFolder: 'playwright-report', open: 'never' }], ['github']],
   use: {
     baseURL: externalBaseUrl || 'http://127.0.0.1:4173',
+    extraHTTPHeaders: protectionBypass ? { 'x-vercel-protection-bypass': protectionBypass } : undefined,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
