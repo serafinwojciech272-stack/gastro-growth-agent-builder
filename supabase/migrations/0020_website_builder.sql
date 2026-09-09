@@ -42,7 +42,10 @@ create policy website_builder_projects_delete_member on public.website_builder_p
 for delete to authenticated using (public.is_org_member(organization_id));
 
 create or replace function public.touch_website_builder_projects_updated_at()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+set search_path = public
+as $$
 begin
   new.updated_at = now();
   return new;
