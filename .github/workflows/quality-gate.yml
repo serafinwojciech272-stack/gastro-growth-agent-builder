@@ -33,6 +33,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Diagnose js-yaml dependency tree
+        run: |
+          npm ls js-yaml --all || true
+          npm explain js-yaml || true
+
       - name: TypeScript check
         run: npx tsc -b --pretty false
 
