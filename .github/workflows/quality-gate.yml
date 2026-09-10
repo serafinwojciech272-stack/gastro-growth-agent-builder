@@ -30,24 +30,10 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Refresh security-patched lockfile
-        run: npm install --package-lock-only --ignore-scripts --no-audit
-
-      - name: Persist lockfile security refresh
-        shell: bash
+      - name: Sync lockfile and install dependencies
         run: |
-          if git diff --quiet -- package-lock.json; then
-            echo 'Lockfile already current.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json
-          git commit -m 'chore(deps): refresh security-patched lockfile'
-          git push origin HEAD:main
-
-      - name: Install dependencies
-        run: npm ci
+          npm install --package-lock-only --ignore-scripts --no-audit
+          npm install --ignore-scripts --no-audit
 
       - name: TypeScript check
         run: npx tsc -b --pretty false
@@ -80,5 +66,5 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Playwright E2E auth and mobile gate
+      - name: Playwright E2E desktop tablet mobile gate
         run: npm run test:e2e
