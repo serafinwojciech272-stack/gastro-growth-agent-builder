@@ -43,14 +43,18 @@ jobs:
           ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
         run: |
           set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != 'workflow_dispatch' ]; then
+            echo 'MISSION_ENGINE_AUTH_GATE: NOT_REQUIRED_FOR_PUSH_OR_PR'
+            exit 0
+          fi
           if [ -z "${ENGINE_TOKEN}" ]; then
             echo 'MISSION_ENGINE_AUTH_GATE: MISSING'
-            echo 'MISSION_ENGINE_TOKEN is not configured as a repository Actions secret.'
+            echo 'MISSION_ENGINE_TOKEN is required for manual autonomous/full runs.'
             exit 1
           fi
           echo 'MISSION_ENGINE_AUTH_GATE: PRESENT'
       - name: Validate Mission Engine repository authentication
-        if: steps.presence.outcome == 'success'
+        if: github.event_name == 'workflow_dispatch' && steps.presence.outcome == 'success'
         shell: bash
         env:
           ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
@@ -66,6 +70,7 @@ jobs:
             *) echo "MISSION_ENGINE_AUTH_GATE: REQUEST_FAILED (HTTP ${status})"; echo 'Diagnosis: GitHub API returned an unexpected response.'; exit 1 ;;
           esac
       - name: Verify Mission Engine main ref
+        if: github.event_name == 'workflow_dispatch' && steps.presence.outcome == 'success'
         shell: bash
         env:
           ENGINE_TOKEN: ${{ secrets.MISSION_ENGINE_TOKEN }}
@@ -123,7 +128,7 @@ jobs:
   agent:
     name: Mission Engine Autonomous Agent
     needs: [precheck, build, mission-engine-auth]
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'autonomous' || inputs.mode == 'full')
+    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'autonomous' || inputs.mode == 'full')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -214,5 +219,5 @@ jobs:
             echo "Build job: ${{ needs.build.result }}"
             echo "Mission Engine job: ${{ needs.agent.result }}"
             echo "Recovery attempts limit: $MAX_AUTO_RECOVERY_ATTEMPTS"
-            if [ '${{ needs.mission-engine-auth.result }}' = 'success' ] && [ '${{ needs.build.result }}' = 'success' ] && [ '${{ needs.agent.result }}' = 'success' ]; then echo 'Result: SUCCESS'; else echo 'Result: FAILURE'; exit 1; fi
+            if [ '${{ needs.mission-engine-auth.result }}' = 'success' ] && [ '${{ needs.build.result }}' = 'success' ] && { [ '${{ needs.agent.result }}' = 'success' ] || [ '${{ needs.agent.result }}' = 'skipped' ]; }; then echo 'Result: SUCCESS'; else echo 'Result: FAILURE'; exit 1; fi
           } >> "$GITHUB_STEP_SUMMARY"
