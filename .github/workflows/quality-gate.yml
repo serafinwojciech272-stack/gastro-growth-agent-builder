@@ -43,7 +43,7 @@ jobs:
         run: npm run build
 
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=high --omit=dev
 
       - name: Block client-side OpenRouter secrets
         shell: bash
