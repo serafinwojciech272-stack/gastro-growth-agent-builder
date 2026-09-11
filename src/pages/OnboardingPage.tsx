@@ -60,7 +60,7 @@ export default function OnboardingPage() {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !sessionData.session?.access_token) throw new Error('Unable to obtain the authenticated session for Website Audit.');
 
-    let { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('business_profiles')
       .select('id, organization_id, workspace_id, name, legal_name, industry, business_model, website_url, locale, timezone, metadata, created_at, updated_at')
       .eq('organization_id', organizationId)
@@ -70,7 +70,8 @@ export default function OnboardingPage() {
       .maybeSingle();
     if (profileError) throw profileError;
 
-    if (!profile) {
+    let resolvedProfile = profile;
+    if (!resolvedProfile) {
       const { data: createdProfile, error: createProfileError } = await supabase.from('business_profiles').insert({
         organization_id: organizationId,
         name: form.restaurantName.trim(),
@@ -88,10 +89,10 @@ export default function OnboardingPage() {
         },
       }).select('id, organization_id, workspace_id, name, legal_name, industry, business_model, website_url, locale, timezone, metadata, created_at, updated_at').single();
       if (createProfileError) throw createProfileError;
-      profile = createdProfile;
+      resolvedProfile = createdProfile;
     }
 
-    const record = profile as BusinessProfileRecord;
+    const record = resolvedProfile as BusinessProfileRecord;
     const { error: restaurantLinkError } = await supabase.from('restaurants').update({ business_profile_id: record.id }).eq('id', restaurantId);
     if (restaurantLinkError) throw restaurantLinkError;
 
