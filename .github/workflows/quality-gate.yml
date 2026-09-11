@@ -30,7 +30,10 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies from lockfile
+      - name: Synchronize lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit
+
+      - name: Install dependencies from synchronized lockfile
         run: npm ci --ignore-scripts --no-audit
 
       - name: TypeScript check
@@ -46,7 +49,7 @@ jobs:
         run: npm run build
 
       - name: Dependency audit
-        run: npm audit --audit-level=high --omit=dev
+        run: npm audit --audit-level=high
 
       - name: Block client-side OpenRouter secrets
         shell: bash
