@@ -13,7 +13,17 @@ Deno.serve(async (req) => {
     if (!actionId) throw new Error("actionId is required");
     const { data: action, error } = await supabase.from("actions").select("*").eq("id", actionId).single();
     if (error) throw error;
-    await supabase.from("actions").update({ status: "in_progress" }).eq("id", actionId);
+
+    const missionId = action?.payload && typeof action.payload === "object" && typeof action.payload.mission_id === "string" ? action.payload.mission_id : null;
+    if (missionId) {
+      const { data: mission, error: missionError } = await supabase.from("growth_mission_runs").select("id,status,approved_at").eq("id", missionId).maybeSingle();
+      if (missionError) throw missionError;
+      if (!mission) throw new Error("Governed mission not found or not accessible");
+      if (!mission.approved_at || !["approved", "executing", "measuring"].includes(mission.status)) throw new Error("Mission approval is required before execution");
+    }
+
+    const { error: startError } = await supabase.from("actions").update({ status: "in_progress" }).eq("id", actionId).in("status", ["todo", "approved", "pending"]);
+    if (startError) throw startError;
 
     if (externalTypes.has(action.action_type)) {
       const result = { state: "awaiting_integration", reason: "External provider authorization is required before execution.", provider_action: action.action_type };
