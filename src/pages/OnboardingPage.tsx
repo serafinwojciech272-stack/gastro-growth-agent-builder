@@ -60,7 +60,7 @@ export default function OnboardingPage() {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !sessionData.session?.access_token) throw new Error('Unable to obtain the authenticated session for Website Audit.');
 
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from('business_profiles')
       .select('id, organization_id, workspace_id, name, legal_name, industry, business_model, website_url, locale, timezone, metadata, created_at, updated_at')
       .eq('organization_id', organizationId)
@@ -69,9 +69,32 @@ export default function OnboardingPage() {
       .limit(1)
       .maybeSingle();
     if (profileError) throw profileError;
-    if (!profile) throw new Error('Business profile was not created for this restaurant.');
+
+    if (!profile) {
+      const { data: createdProfile, error: createProfileError } = await supabase.from('business_profiles').insert({
+        organization_id: organizationId,
+        name: form.restaurantName.trim(),
+        industry: 'restaurant',
+        business_model: 'b2c',
+        website_url: form.website.trim(),
+        locale: form.country.trim() === 'Poland' ? 'pl-PL' : null,
+        timezone: 'Europe/Warsaw',
+        metadata: {
+          locations: [form.city.trim()],
+          customerSegments: form.targetCustomer.trim() ? [form.targetCustomer.trim()] : [],
+          goals: form.goals.map((title, index) => ({ id: `${organizationId}:goal:${index}`, title, priority: 100 - index * 10, status: 'active' })),
+          constraints: [],
+          brand: { name: form.restaurantName.trim() },
+        },
+      }).select('id, organization_id, workspace_id, name, legal_name, industry, business_model, website_url, locale, timezone, metadata, created_at, updated_at').single();
+      if (createProfileError) throw createProfileError;
+      profile = createdProfile;
+    }
 
     const record = profile as BusinessProfileRecord;
+    const { error: restaurantLinkError } = await supabase.from('restaurants').update({ business_profile_id: record.id }).eq('id', restaurantId);
+    if (restaurantLinkError) throw restaurantLinkError;
+
     const business = businessFromProfile(record, { workspaceId: record.workspace_id ?? organizationId });
     const response = await fetch('/api/business-intelligence/website-audit', {
       method: 'POST',
