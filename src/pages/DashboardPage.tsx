@@ -17,9 +17,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true); const [restaurant, setRestaurant] = useState<Restaurant | null>(null); const [missions, setMissions] = useState<Mission[]>([]); const [actions, setActions] = useState<Action[]>([]); const [measurements, setMeasurements] = useState<Measurement[]>([]); const [learning, setLearning] = useState<Learning[]>([]); const [error, setError] = useState<string | null>(null);
   async function loadData(userId: string) {
     setLoading(true); setError(null);
-    try { const sb = requireSupabase();
-      const { data: restaurantData, error: restaurantError } = await sb.from("restaurants").select("id,name,score,rating,reviews").eq("user_id", userId).single();
-      if (restaurantError && restaurantError.code !== "PGRST116") throw restaurantError; if (!restaurantData) { navigate("/app/onboarding"); return; }
+    try {
+      const sb = requireSupabase();
+      const { data: membership, error: membershipError } = await sb.from("organization_members").select("organization_id").eq("user_id", userId).limit(1).single();
+      if (membershipError && membershipError.code !== "PGRST116") throw membershipError;
+      if (!membership?.organization_id) { navigate("/app/onboarding"); return; }
+
+      const { data: restaurantData, error: restaurantError } = await sb.from("restaurants").select("id,name,score,rating,reviews").eq("organization_id", membership.organization_id).limit(1).single();
+      if (restaurantError && restaurantError.code !== "PGRST116") throw restaurantError;
+      if (!restaurantData) { navigate("/app/onboarding"); return; }
       const r = restaurantData as Restaurant; setRestaurant(r);
       const [{ data: ms, error: me }, { data: mt, error: mte }, { data: lm, error: le }] = await Promise.all([
         sb.from("growth_missions").select("id,title,goal,priority,status,approval_status,target_value,baseline_value,unit,created_at").eq("restaurant_id", r.id).order("priority", { ascending: false }).limit(8),
@@ -29,7 +35,7 @@ export default function DashboardPage() {
       if (me) throw me; if (mte) throw mte; if (le) throw le;
       const nextMissions = (ms ?? []) as Mission[]; setMissions(nextMissions); setMeasurements((mt ?? []) as Measurement[]); setLearning((lm ?? []) as Learning[]);
       if (nextMissions.length) { const { data: as, error: ae } = await sb.from("growth_actions").select("id,mission_id,title,description,status,impact_score,effort_score,risk_level,due_at").in("mission_id", nextMissions.map((m) => m.id)).order("impact_score", { ascending: false }); if (ae) throw ae; setActions((as ?? []) as Action[]); } else setActions([]);
-    } catch (e) { console.error(e); setError("Fehler beim Laden der Growth-Daten."); } finally { setLoading(false); }
+    } catch (e) { console.error(e); setError(e instanceof Error ? `Fehler beim Laden der Growth-Daten: ${e.message}` : "Fehler beim Laden der Growth-Daten."); } finally { setLoading(false); }
   }
   useEffect(() => { if (authLoading) return; if (!user) { navigate("/login"); return; } void loadData(user.id); }, [user, authLoading, navigate]);
   async function approveMission(missionId: string) { if (!restaurant?.id || !user) return; try { const sb = requireSupabase(); const { error: updateError } = await sb.from("growth_missions").update({ approval_status: "approved", status: "active", approved_by: user.id, approved_at: new Date().toISOString() }).eq("id", missionId).eq("restaurant_id", restaurant.id); if (updateError) throw updateError; await loadData(user.id); } catch (e) { console.error(e); setError("Freigabe konnte nicht gespeichert werden."); } }
