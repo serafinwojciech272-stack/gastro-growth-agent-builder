@@ -18,11 +18,17 @@ The Universal Business OS intelligence path is:
 
 ## Tenant invariant
 
-All persisted intelligence is scoped through `business_profiles.organization_id` and the existing `is_org_member()` authorization primitive. Graph relationships, signal entity references and evidence signal references are constrained to the same Business.
+All persisted intelligence is scoped through `business_profiles.organization_id` and the existing `is_org_member()` authorization primitive. Graph relationships, signal entity references and evidence signal references are constrained to the same Business. Intelligence artifacts use the same business scope and preserve cross-artifact foreign-key integrity.
 
 ## Runtime boundary
 
 Pure intelligence functions remain deterministic and side-effect free. Persistence is injected through the RLS-protected Supabase client. Service-role-only database functions are used only for server-side integrity triggers; the browser never receives service-role credentials.
+
+## Diagnostic engine
+
+`universalDiagnosticEngine.ts` provides the first universal, evidence-backed diagnostic cycle. It does not invent root causes as facts. Negative/anomalous/threshold signals are converted into measurement evidence, grouped into traceable diagnoses, and converted into quantified opportunities with conservative defaults. Root cause language is explicitly marked for validation until stronger evidence exists.
+
+The engine can therefore operate with real signal producers without requiring a vertical-specific diagnostic engine. Vertical packs may later replace or enrich the scoring and interpretation policy without changing the Universal Business Core contracts.
 
 ## Priority invariant
 
@@ -30,21 +36,23 @@ The priority policy weights must sum to 1. Penalty dimensions are transformed in
 
 ## Mission integration
 
-`buildGrowthMissionFromUniversal()` bridges the canonical Universal Opportunity ranking into the existing Growth Mission Builder. This is an adapter, not a parallel execution engine. Approval, execution, measurement, outcome and learning remain owned by the existing Growth Control Plane.
+`buildGrowthMissionFromUniversal()` bridges the canonical Universal Opportunity ranking into the existing Growth Mission Builder and creates missions in `awaiting_approval`. This is an adapter, not a parallel execution engine. Approval, execution, measurement, outcome and learning remain owned by the existing Growth Control Plane.
 
 ## Persistence
 
-The live Supabase project contains the canonical `business_profiles` identity plus `business_entities`, `business_relationships`, `business_signals` and `business_evidence`. All five tables have RLS enabled with four CRUD policies. Cross-business validation functions are not executable by `public`, `anon` or `authenticated` roles.
+The live Supabase project contains the canonical `business_profiles` identity plus `business_entities`, `business_relationships`, `business_signals` and `business_evidence`. It also contains `business_diagnoses`, `business_opportunities`, `business_recommendations` and `business_priority_scores`. These intelligence tables are organization-protected through the Business → Organization membership boundary, with cross-artifact foreign keys and business-scope integrity enforced in the database.
 
-The graph starts empty by design. Production truth must be collected from real business data and integrations; no synthetic intelligence records are inserted merely to make the dashboard look populated.
+The graph and intelligence artifact tables start empty by design. Production truth must be collected from real business data and integrations; no synthetic records are inserted merely to make the dashboard look populated.
 
-## Next gates
+## Current gates
 
-1. Verify the current Quality Gate after the intelligence changes.
-2. Add formal automated unit coverage for the pure intelligence contracts when the repository's test strategy is introduced.
-3. Integrate real signal/evidence producers from website, reviews, menu, analytics and integrations.
-4. Persist diagnosis/opportunity/recommendation/priority artifacts once their durable schema is designed and tenant/RLS boundaries are verified.
-5. Feed the highest-confidence, highest-priority opportunity into the existing Mission/Approval pipeline.
-6. Add measurement and outcome linkage, then Business Learning.
+1. Universal contracts and persistence schema: implemented.
+2. Evidence-backed diagnostic cycle: implemented.
+3. Universal Opportunity → existing Mission/Approval bridge: implemented.
+4. Real signal/evidence producers from website, reviews, menu, analytics and integrations: next.
+5. Durable integration of the intelligence cycle with the live application: next.
+6. Measurement and outcome linkage: next.
+7. Business Learning and continuous intelligence: next.
+8. Quality Gate/CI must be verified after the current batch; no green status is claimed without workflow evidence.
 
 No Vercel production deployment is required for these architecture stages. Deployment remains a batch milestone after code and CI are green.
