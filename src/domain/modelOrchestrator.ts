@@ -7,20 +7,22 @@ export type ModelTask =
   | "evaluation";
 
 export type ModelCapability = "reasoning" | "structured_output" | "vision" | "fast" | "low_cost";
+export type ModelCostTier = "low" | "medium" | "high";
+export type ModelQualityTier = "standard" | "strong" | "frontier";
 
 export type ModelCandidate = {
   id: string;
   provider: string;
   capabilities: ModelCapability[];
-  costTier: "low" | "medium" | "high";
-  qualityTier: "standard" | "strong" | "frontier";
+  costTier: ModelCostTier;
+  qualityTier: ModelQualityTier;
   enabled: boolean;
 };
 
 export type ModelPolicy = {
   preferred: string[];
   fallback: string[];
-  maxCostTier: ModelCandidate["costTier"];
+  maxCostTier: ModelCostTier;
   requireStructuredOutput: boolean;
   evaluationRequired: boolean;
 };
@@ -32,27 +34,41 @@ export type ModelSelection = {
   reasons: string[];
 };
 
-const COST_RANK: Record<ModelCandidate["costTier"], number> = { low: 1, medium: 2, high: 3 };
-const QUALITY_RANK: Record<ModelCandidate["qualityTier"], number> = { standard: 1, strong: 2, frontier: 3 };
+const COST_RANK: Record<ModelCostTier, number> = { low: 1, medium: 2, high: 3 };
+const QUALITY_RANK: Record<ModelQualityTier, number> = { standard: 1, strong: 2, frontier: 3 };
+
+const REQUIRED_CAPABILITIES: Partial<Record<ModelTask, ModelCapability[]>> = {
+  diagnosis: ["reasoning"],
+  mission_planning: ["reasoning"],
+  evaluation: ["reasoning"],
+};
+
+function supports(candidate: ModelCandidate, task: ModelTask, policy: ModelPolicy): boolean {
+  if (!candidate.enabled) return false;
+  if (COST_RANK[candidate.costTier] > COST_RANK[policy.maxCostTier]) return false;
+  if (policy.requireStructuredOutput && !candidate.capabilities.includes("structured_output")) return false;
+  return (REQUIRED_CAPABILITIES[task] ?? []).every((capability) => candidate.capabilities.includes(capability));
+}
+
+function scoreCandidate(candidate: ModelCandidate, task: ModelTask, policy: ModelPolicy): number {
+  const preferred = policy.preferred.indexOf(candidate.id);
+  const fallback = policy.fallback.indexOf(candidate.id);
+  const quality = QUALITY_RANK[candidate.qualityTier] * 100;
+  const costEfficiency = (4 - COST_RANK[candidate.costTier]) * 10;
+  const speed = candidate.capabilities.includes("fast") ? 5 : 0;
+  const taskFit = task === "content_generation" && candidate.capabilities.includes("vision") ? 2 : 0;
+  const preferredBonus = preferred >= 0 ? 1000 - preferred * 25 : 0;
+  const fallbackBonus = fallback >= 0 ? 50 - fallback * 5 : 0;
+  return quality + costEfficiency + speed + taskFit + preferredBonus + fallbackBonus;
+}
 
 export function selectModel(task: ModelTask, candidates: ModelCandidate[], policy: ModelPolicy): ModelSelection {
-  const available = candidates.filter((candidate) => candidate.enabled && COST_RANK[candidate.costTier] <= COST_RANK[policy.maxCostTier]);
-  if (!available.length) throw new Error(`No enabled model satisfies policy for task: ${task}`);
+  const eligible = candidates.filter((candidate) => supports(candidate, task, policy));
+  if (!eligible.length) throw new Error(`No enabled model satisfies policy for task: ${task}`);
 
-  const preferred = policy.preferred.map((id) => available.find((candidate) => candidate.id === id)).filter(Boolean) as ModelCandidate[];
-  const capable = available.filter((candidate) => {
-    if (policy.requireStructuredOutput && !candidate.capabilities.includes("structured_output")) return false;
-    if (["diagnosis", "mission_planning", "evaluation"].includes(task) && !candidate.capabilities.includes("reasoning")) return false;
-    return true;
-  });
-  const pool = capable.length ? capable : available;
-  const ranked = [...pool].sort((a, b) => {
-    const aPreferred = preferred.some((candidate) => candidate.id === a.id) ? 1 : 0;
-    const bPreferred = preferred.some((candidate) => candidate.id === b.id) ? 1 : 0;
-    if (aPreferred !== bPreferred) return bPreferred - aPreferred;
-    return QUALITY_RANK[b.qualityTier] - QUALITY_RANK[a.qualityTier] || COST_RANK[a.costTier] - COST_RANK[b.costTier];
-  });
+  const ranked = [...eligible].sort((a, b) => scoreCandidate(b, task, policy) - scoreCandidate(a, task, policy) || a.id.localeCompare(b.id));
   const selected = ranked[0];
+
   return {
     task,
     selected,
@@ -61,7 +77,12 @@ export function selectModel(task: ModelTask, candidates: ModelCandidate[], polic
       `task=${task}`,
       `quality=${selected.qualityTier}`,
       `cost=${selected.costTier}`,
-      policy.evaluationRequired ? "evaluation=required" : "evaluation=optional",
+      `structured_output=${policy.requireStructuredOutput ? "required" : "optional"}`,
+      `evaluation=${policy.evaluationRequired ? "required" : "optional"}`,
     ],
   };
+}
+
+export function canFallback(selection: ModelSelection, failedModelId: string): boolean {
+  return selection.selected.id === failedModelId && selection.fallbackChain.length > 0;
 }
