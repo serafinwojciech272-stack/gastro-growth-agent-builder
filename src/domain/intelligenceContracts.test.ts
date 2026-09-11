@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBusinessIntelligence } from "./businessIntelligencePipeline";
-import { runIntelligenceControlPlane } from "./intelligenceControlPlane";
-import { measureGrowthOutcome } from "./outcomeLearningEngine";
-import type { BusinessContext, BusinessSignal } from "./universalBusinessCore";
-import type { GrowthAction, GrowthDecisionContext, GrowthKpi } from "./growthTypes";
+import { buildBusinessIntelligence } from "./businessIntelligencePipeline.ts";
+import { runIntelligenceControlPlane } from "./intelligenceControlPlane.ts";
+import { measureGrowthOutcome } from "./outcomeLearningEngine.ts";
+import type { BusinessContext, BusinessSignal } from "./universalBusinessCore.ts";
+import type { GrowthAction, GrowthDecisionContext, GrowthKpi } from "./growthTypes.ts";
 
 const context: BusinessContext = {
   business: {
