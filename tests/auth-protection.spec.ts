@@ -2,8 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('GA authentication protection', () => {
   test('unauthenticated users are redirected from protected routes to login', async ({ page }) => {
-    const protectedRoutes = ['/app/dashboard', '/app/advisor', '/app/website-builder', '/app/actions'];
-
+    const protectedRoutes = ['/app/dashboard', '/app/advisor', '/app/missions', '/app/mission-control', '/app/website-builder', '/app/actions'];
     for (const route of protectedRoutes) {
       await page.goto(route);
       await expect(page).toHaveURL(/\/login\?next=/);
@@ -17,5 +16,10 @@ test.describe('GA authentication protection', () => {
     await expect(page.getByLabel('Password')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Forgot password?' })).toBeVisible();
+  });
+
+  test('protected workspace routes preserve direct navigation intent', async ({ page }) => {
+    await page.goto('/app/missions');
+    await expect(page).toHaveURL(/\/login\?next=%2Fapp%2Fmissions/);
   });
 });
