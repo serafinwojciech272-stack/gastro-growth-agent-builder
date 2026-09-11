@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:unit": "tsx --test src/services/websiteAuditCollector.test.ts src/domain/intelligenceContracts.test.ts",
+    "test:unit": "tsx --test src/services/websiteAuditCollector.test.ts src/domain/intelligenceContracts.test.ts src/domain/universalGrowthContracts.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
