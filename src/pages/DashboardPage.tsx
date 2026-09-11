@@ -18,6 +18,7 @@ type MissionRun = {
   status: string;
   mission_json: Record<string, unknown> | null;
   decision_json: Record<string, unknown> | null;
+  approved_at: string | null;
   created_at: string;
 };
 type Outcome = { id: string; mission_id: string; status: string; metrics_before: Record<string, unknown> | null; metrics_after: Record<string, unknown> | null; summary: string | null; learning: string | null; confidence: number | null; created_at: string };
@@ -71,13 +72,13 @@ export default function DashboardPage() {
 
       const r = restaurantData as Restaurant;
       setRestaurant(r);
-
       const businessId = r.business_profile_id;
+
       let runRows: MissionRun[] = [];
       if (businessId) {
         const { data, error: runError } = await sb
           .from("growth_mission_runs")
-          .select("id,business_id,status,mission_json,decision_json,created_at")
+          .select("id,business_id,status,mission_json,decision_json,approved_at,created_at")
           .eq("business_id", businessId)
           .order("created_at", { ascending: false })
           .limit(8);
@@ -87,7 +88,7 @@ export default function DashboardPage() {
 
       const { data: actionRows, error: actionError } = await sb
         .from("actions")
-        .select("id,restaurant_id,title,description,status,priority,due_at,created_at")
+        .select("id,restaurant_id,recommendation_id,title,description,status,priority,due_at,created_at")
         .eq("restaurant_id", r.id)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -130,7 +131,7 @@ export default function DashboardPage() {
         title: textValue(a.title, "Growth action"),
         description: typeof a.description === "string" ? a.description : null,
         status: textValue(a.status, "pending"),
-        impact_score: numberValue(a.priority === "high" ? 80 : a.priority === "medium" ? 60 : 40, 40),
+        impact_score: a.priority === "high" ? 80 : a.priority === "medium" ? 60 : 40,
         effort_score: 50,
         risk_level: "standard",
         due_at: typeof a.due_at === "string" ? a.due_at : null,
