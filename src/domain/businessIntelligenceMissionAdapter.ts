@@ -34,7 +34,14 @@ const signalToKpi = (signal: BusinessSignal): GrowthKpi => ({
   current: typeof signal.value === "number" ? signal.value : undefined,
 });
 
-const recommendationFor = (
+const recommendationForSignal = (
+  recommendations: readonly Recommendation[],
+  signal: BusinessSignal,
+): Recommendation | undefined => recommendations.find(
+  (item) => item.businessId === signal.businessId && item.opportunityId === `opportunity:${signal.id}`,
+);
+
+const recommendationToOpportunity = (
   recommendation: Recommendation | undefined,
   signal: BusinessSignal,
 ): OpportunitySignal => ({
@@ -61,17 +68,19 @@ const actionFor = (recommendation: Recommendation | undefined, signal: BusinessS
 
 export function adaptBusinessIntelligenceToMission(input: MissionAdapterInput): MissionAdapterOutput {
   const { context, signals, recommendations } = input;
+  const materialSignals = signals.filter(
+    (signal) => signal.deltaPercent !== undefined && Math.abs(signal.deltaPercent) >= 10,
+  );
   const kpis = signals.map(signalToKpi);
-  const opportunitySignals = signals
-    .filter((signal) => signal.deltaPercent !== undefined && Math.abs(signal.deltaPercent) >= 10)
-    .map((signal) => recommendationFor(recommendations.find((item) => item.businessId === context.businessId), signal));
+  const opportunitySignals = materialSignals.map((signal) =>
+    recommendationToOpportunity(recommendationForSignal(recommendations, signal), signal),
+  );
 
-  const actions = signals
-    .filter((signal) => signal.deltaPercent !== undefined && Math.abs(signal.deltaPercent) >= 10)
-    .flatMap((signal) => {
-      const recommendation = recommendations.find((item) => item.businessId === context.businessId && item.opportunityId === `opportunity:${signal.id}`);
-      return (recommendation?.actions ?? ["Validate diagnosis", "Prepare remediation", "Measure outcome"]).map((_, index) => actionFor(recommendation, signal, index));
-    });
+  const actions = materialSignals.flatMap((signal) => {
+    const recommendation = recommendationForSignal(recommendations, signal);
+    const actionCount = recommendation?.actions.length ?? 3;
+    return Array.from({ length: actionCount }, (_, index) => actionFor(recommendation, signal, index));
+  });
 
   const decisionContext: GrowthDecisionContext = {
     vertical: asVertical(context),
