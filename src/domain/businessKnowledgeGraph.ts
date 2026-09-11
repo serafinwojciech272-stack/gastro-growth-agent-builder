@@ -1,54 +1,14 @@
-import type { BusinessContext, BusinessSignal } from "./businessIntelligenceContracts";
-
-export type KnowledgeNodeType =
-  | "business"
-  | "identity"
-  | "domain"
-  | "business_model"
-  | "product"
-  | "service"
-  | "customer_segment"
-  | "competitor"
-  | "pricing"
-  | "brand"
-  | "region"
-  | "metric"
-  | "goal"
-  | "constraint"
-  | "channel";
-
-export type KnowledgeNode = {
-  id: string;
-  type: KnowledgeNodeType;
-  label: string;
-  attributes?: Record<string, unknown>;
-};
-
-export type KnowledgeEdgeRelation =
-  | "HAS_IDENTITY"
-  | "HAS_DOMAIN"
-  | "HAS_BUSINESS_MODEL"
-  | "OFFERS_PRODUCT"
-  | "OFFERS_SERVICE"
-  | "SERVES_SEGMENT"
-  | "COMPETES_WITH"
-  | "USES_PRICING"
-  | "HAS_BRAND"
-  | "OPERATES_IN"
-  | "HAS_GOAL"
-  | "HAS_CONSTRAINT"
-  | "USES_CHANNEL"
-  | "OBSERVED_METRIC";
-
-export type KnowledgeEdge = {
-  from: string;
-  relation: KnowledgeEdgeRelation;
-  to: string;
-};
+import type {
+  BusinessContext,
+  BusinessEntity,
+  BusinessEntityType,
+  BusinessRelationship,
+  BusinessSignal,
+} from "./universalBusinessCore";
 
 export type BusinessKnowledgeGraph = {
-  nodes: KnowledgeNode[];
-  edges: KnowledgeEdge[];
+  entities: BusinessEntity[];
+  relationships: BusinessRelationship[];
 };
 
 const slug = (value: string): string => {
@@ -57,59 +17,70 @@ const slug = (value: string): string => {
   return result || "unknown";
 };
 
+const entityId = (businessId: string, type: BusinessEntityType, value: string): string =>
+  `entity:${businessId}:${type}:${slug(value)}`;
+
 export function buildBusinessKnowledgeGraph(
   context: BusinessContext,
   signals: readonly BusinessSignal[],
 ): BusinessKnowledgeGraph {
-  const businessId = `business:${context.businessId}`;
-  const nodes: KnowledgeNode[] = [{
-    id: businessId,
+  const business = context.business;
+  const now = context.lastUpdatedAt;
+  const entities: BusinessEntity[] = [{
+    id: business.id,
+    businessId: business.id,
     type: "business",
-    label: context.name,
-    attributes: { updatedAt: context.updatedAt },
+    name: business.name,
+    attributes: {
+      legalName: business.legalName,
+      businessModel: business.businessModel,
+      websiteUrl: business.websiteUrl,
+      locale: business.locale,
+      timezone: business.timezone,
+    },
+    confidence: 1,
+    observedAt: now,
   }];
-  const edges: KnowledgeEdge[] = [];
+  const relationships: BusinessRelationship[] = [];
+  const seen = new Set<string>();
 
-  const addList = (
-    values: readonly string[] | undefined,
-    type: KnowledgeNodeType,
-    relation: KnowledgeEdgeRelation,
-    prefix: string,
-  ) => {
-    for (const value of values ?? []) {
-      const id = `${prefix}:${slug(value)}`;
-      if (!nodes.some((node) => node.id === id)) nodes.push({ id, type, label: value });
-      edges.push({ from: businessId, relation, to: id });
+  const addEntity = (type: BusinessEntityType, name: string, attributes: Record<string, unknown> = {}): string => {
+    const id = entityId(business.id, type, name);
+    if (!seen.has(id)) {
+      seen.add(id);
+      entities.push({ id, businessId: business.id, type, name, attributes, confidence: 1, observedAt: now });
     }
+    return id;
   };
 
-  addList(context.operatingRegions, "region", "OPERATES_IN", "region");
-  addList(context.products, "product", "OFFERS_PRODUCT", "product");
-  addList(context.services, "service", "OFFERS_SERVICE", "service");
-  addList(context.customerSegments, "customer_segment", "SERVES_SEGMENT", "segment");
-  addList(context.competitors, "competitor", "COMPETES_WITH", "competitor");
-  addList(context.goals, "goal", "HAS_GOAL", "goal");
-  addList(context.constraints, "constraint", "HAS_CONSTRAINT", "constraint");
-  addList(context.channels, "channel", "USES_CHANNEL", "channel");
+  const relate = (fromEntityId: string, toEntityId: string, type: BusinessRelationship["type"]) => {
+    relationships.push({
+      id: `relationship:${fromEntityId}:${type}:${toEntityId}`,
+      businessId: business.id,
+      fromEntityId,
+      toEntityId,
+      type,
+      confidence: 1,
+      source: "business_context",
+      observedAt: now,
+    });
+  };
 
-  if (context.industry) addList([context.industry], "domain", "HAS_DOMAIN", "domain");
-  if (context.vertical) addList([context.vertical], "domain", "HAS_DOMAIN", "vertical");
-  if (context.businessModel) addList([context.businessModel], "business_model", "HAS_BUSINESS_MODEL", "model");
-  if (context.pricingModel) addList([context.pricingModel], "pricing", "USES_PRICING", "pricing");
-  if (context.brandPositioning) addList([context.brandPositioning], "brand", "HAS_BRAND", "brand");
+  for (const location of business.locations) relate(business.id, addEntity("location", location), "located_at");
+  for (const product of business.products) relate(business.id, addEntity("product", product), "offers");
+  for (const service of business.services) relate(business.id, addEntity("service", service), "offers");
+  for (const segment of business.customerSegments) relate(business.id, addEntity("customer_segment", segment), "serves");
+  for (const competitor of business.competitors) relate(business.id, addEntity("competitor", competitor), "competes_with");
+  for (const channel of business.channels ?? []) relate(business.id, addEntity("channel", channel), "uses");
+  for (const goal of context.activeGoals) relate(business.id, addEntity("goal", goal.title, { metric: goal.metric, target: goal.target }), "targets");
 
   for (const signal of signals) {
-    const id = `metric:${signal.source}:${slug(signal.metric)}`;
-    if (!nodes.some((node) => node.id === id)) {
-      nodes.push({
-        id,
-        type: "metric",
-        label: signal.metric,
-        attributes: { source: signal.source, unit: signal.unit, confidence: signal.confidence },
-      });
+    for (const referencedEntityId of signal.entityIds ?? []) {
+      if (entities.some((entity) => entity.id === referencedEntityId)) {
+        relate(referencedEntityId, addEntity("other", signal.metric ?? signal.type), "influences");
+      }
     }
-    edges.push({ from: businessId, relation: "OBSERVED_METRIC", to: id });
   }
 
-  return { nodes, edges };
+  return { entities, relationships };
 }
