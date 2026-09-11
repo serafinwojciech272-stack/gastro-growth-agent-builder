@@ -34,16 +34,15 @@ export default function AuthPage() {
 
     try {
       const supabase = requireSupabase();
-      // signInWithPassword updates the auth store asynchronously. Read the session
-      // directly here so the workspace query always uses the fresh access token.
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-      if (!sessionData.session?.user?.id) throw new Error('Signed in, but no active Supabase session was established. Please try signing in again.');
+      // Use the session returned by signInWithPassword. This avoids routing with a
+      // stale auth snapshot while the Supabase auth store is still updating.
+      const userId = result.session?.user?.id;
+      if (!userId) throw new Error('Signed in, but no active Supabase session was established. Please try signing in again.');
 
       const { data: memberships, error: membershipError } = await supabase
         .from('organization_members')
         .select('organization_id')
-        .eq('user_id', sessionData.session.user.id)
+        .eq('user_id', userId)
         .limit(1);
       if (membershipError) {
         throw new Error(`Unable to determine your workspace (${membershipError.code || 'SUPABASE_ERROR'}): ${membershipError.message}`);
