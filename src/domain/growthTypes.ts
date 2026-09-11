@@ -4,44 +4,18 @@ export type OutcomeStatus = "success" | "partial_success" | "no_impact" | "negat
 export type ActionRisk = "low" | "medium" | "high";
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4 | 5;
 export type MissionStatus = "draft" | "awaiting_approval" | "approved" | "executing" | "measuring" | "completed" | "cancelled" | "failed" | "human_review";
-
 export type GrowthKpi = { key: string; label: string; unit: "currency" | "count" | "percentage" | "ratio" | "score" | "duration"; baseline?: number; current?: number; target?: number };
 export type GrowthAction = { id: string; title: string; description: string; risk: ActionRisk; autonomyLevel: AutonomyLevel; requiresApproval: boolean; expectedImpact?: string; rollbackStrategy?: string };
 export type GrowthMission = { id: string; businessId: string; vertical: GrowthVerticalId; objective: string; baseline?: string; target?: string; deadline?: string; expectedImpact?: string; confidence?: number; actions: GrowthAction[]; measurementKpis: GrowthKpi[]; status: MissionStatus };
-export type GrowthMetricMeasurement = { baseline?: number; before?: number; after?: number; delta?: number; target?: number; unit?: string };
-export type GrowthOutcome = { missionId: string; actionId?: string; status: OutcomeStatus; measuredAt: string; metrics: Record<string, GrowthMetricMeasurement>; evidence?: string[]; confidence: number; learning?: GrowthLearning }; 
+export type Prediction = { kpi: string; expected: number; baseline: number; confidence: number };
+export type PredictionError = { kpi: string; predictedDelta: number; actualDelta: number; absoluteError: number; signedError: number; directionCorrect: boolean; confidence: number };
+export type GrowthMetricMeasurement = { baseline?: number; before?: number; after?: number; delta?: number; target?: number };
+export type GrowthOutcome = { missionId: string; actionId?: string; status: OutcomeStatus; measuredAt: string; metrics: Record<string, GrowthMetricMeasurement>; evidence?: string[]; confidence: number; learning?: GrowthLearning; predictionErrors?: PredictionError[] };
 export type GrowthLearning = { insight: string; confidence: number; reusable: boolean; sourceOutcomeId?: string; nextRecommendation?: string };
 export type GrowthDecisionContext = { vertical: GrowthVerticalId; businessId: string; objective: string; kpis: GrowthKpi[]; recentOutcomes?: GrowthOutcome[] };
 export type ActionPolicy = { risk: ActionRisk; autonomyLevel: AutonomyLevel; requiresApproval: boolean; maxFrequencyPerDay?: number; maxBudget?: number; allowedIntegrations?: readonly string[] };
 export function isAutonomousAction(action: GrowthAction): boolean { return action.autonomyLevel >= 3 && !action.requiresApproval; }
-
-export function normalizeOutcomeConfidence(confidence: number): number {
-  if (!Number.isFinite(confidence)) return 0;
-  return Math.max(0, Math.min(1, confidence > 1 ? confidence / 100 : confidence));
-}
-
-export function classifyOutcome(confidence: number, delta: number | undefined): OutcomeStatus {
-  const normalized = normalizeOutcomeConfidence(confidence);
-  if (delta === undefined || normalized < 0.5) return "insufficient_data";
-  if (delta > 0) return normalized >= 0.8 ? "success" : "partial_success";
-  if (delta === 0) return "no_impact";
-  return "negative";
-}
-
-export function deriveLearning(outcome: GrowthOutcome): GrowthLearning {
-  const confidence = normalizeOutcomeConfidence(outcome.confidence);
-  const entries = Object.entries(outcome.metrics).filter(([, metric]) => metric.delta !== undefined);
-  if (entries.length === 0 || outcome.status === "insufficient_data") {
-    return { insight: "Outcome data is insufficient to establish reusable learning.", confidence, reusable: false, sourceOutcomeId: outcome.missionId };
-  }
-  const positive = entries.filter(([, metric]) => (metric.delta ?? 0) > 0).length;
-  const negative = entries.filter(([, metric]) => (metric.delta ?? 0) < 0).length;
-  const direction = positive > negative ? "positive" : negative > positive ? "negative" : "mixed";
-  return {
-    insight: `Measured outcome is ${direction} across ${entries.length} KPI(s); use the observed deltas as evidence for the next diagnosis.`,
-    confidence,
-    reusable: confidence >= 0.7 && outcome.status !== "negative",
-    sourceOutcomeId: outcome.missionId,
-    nextRecommendation: outcome.status === "success" ? "Preserve the successful pattern and test whether it generalizes." : "Re-diagnose using the measured outcome and updated business context.",
-  };
-}
+export function normalizeOutcomeConfidence(confidence: number): number { if (!Number.isFinite(confidence)) return 0; return Math.max(0, Math.min(1, confidence > 1 ? confidence / 100 : confidence)); }
+export function classifyOutcome(confidence: number, delta: number | undefined): OutcomeStatus { const normalized = normalizeOutcomeConfidence(confidence); if (delta === undefined || normalized < 0.5) return "insufficient_data"; if (delta > 0) return normalized >= 0.8 ? "success" : "partial_success"; if (delta === 0) return "no_impact"; return "negative"; }
+export function comparePrediction(prediction: Prediction, outcome: GrowthMetricMeasurement): PredictionError { if (prediction.baseline !== outcome.before || outcome.after === undefined || outcome.before === undefined) throw new Error("Prediction requires matching measured before/after values."); const predictedDelta = prediction.expected - prediction.baseline; const actualDelta = outcome.after - outcome.before; return { kpi: prediction.kpi, predictedDelta, actualDelta, absoluteError: Math.abs(actualDelta - predictedDelta), signedError: actualDelta - predictedDelta, directionCorrect: predictedDelta === 0 ? actualDelta === 0 : Math.sign(predictedDelta) === Math.sign(actualDelta), confidence: normalizeOutcomeConfidence(prediction.confidence) } }
+export function deriveLearning(outcome: GrowthOutcome): GrowthLearning { const confidence = normalizeOutcomeConfidence(outcome.confidence); const entries = Object.entries(outcome.metrics).filter(([, metric]) => metric.delta !== undefined); if (entries.length === 0 || outcome.status === "insufficient_data") return { insight: "Outcome data is insufficient to establish reusable learning.", confidence, reusable: false, sourceOutcomeId: outcome.missionId }; const positive = entries.filter(([, metric]) => (metric.delta ?? 0) > 0).length; const negative = entries.filter(([, metric]) => (metric.delta ?? 0) < 0).length; const direction = positive > negative ? "positive" : negative > positive ? "negative" : "mixed"; return { insight: `Measured outcome is ${direction} across ${entries.length} KPI(s); use the observed deltas as evidence for the next diagnosis.`, confidence, reusable: confidence >= 0.7 && outcome.status !== "negative", sourceOutcomeId: outcome.missionId, nextRecommendation: outcome.status === "success" ? "Preserve the successful pattern and test whether it generalizes." : "Re-diagnose using the measured outcome and updated business context." }; }
