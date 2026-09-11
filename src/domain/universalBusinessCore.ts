@@ -1,0 +1,312 @@
+import type { GrowthVerticalId } from "../config/verticals";
+
+export const UNIVERSAL_CORE_CONTRACT_VERSION = "1.0.0" as const;
+
+export type IsoDateTime = string;
+export type Confidence = number;
+export type Score100 = number;
+export type BusinessEntityType =
+  | "business"
+  | "location"
+  | "product"
+  | "service"
+  | "customer_segment"
+  | "competitor"
+  | "channel"
+  | "campaign"
+  | "asset"
+  | "person"
+  | "system"
+  | "goal"
+  | "other";
+
+export type BusinessModel =
+  | "b2b"
+  | "b2c"
+  | "b2b2c"
+  | "marketplace"
+  | "subscription"
+  | "transactional"
+  | "hybrid"
+  | "unknown";
+
+export type Business = {
+  id: string;
+  organizationId: string;
+  workspaceId: string;
+  name: string;
+  legalName?: string;
+  industry: GrowthVerticalId | string;
+  businessModel: BusinessModel;
+  websiteUrl?: string;
+  locale?: string;
+  timezone?: string;
+  locations: string[];
+  products: string[];
+  services: string[];
+  customerSegments: string[];
+  competitors: string[];
+  goals: BusinessGoal[];
+  constraints: BusinessConstraint[];
+  brand?: BusinessBrand;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+};
+
+export type BusinessGoal = {
+  id: string;
+  businessId: string;
+  title: string;
+  description?: string;
+  metric?: string;
+  baseline?: number;
+  target?: number;
+  unit?: string;
+  priority: Score100;
+  status: "active" | "paused" | "completed" | "cancelled";
+  deadline?: IsoDateTime;
+};
+
+export type BusinessConstraint = {
+  id: string;
+  type: "budget" | "capacity" | "time" | "compliance" | "brand" | "technology" | "strategic" | "other";
+  description: string;
+  severity: "soft" | "hard";
+};
+
+export type BusinessBrand = {
+  name?: string;
+  positioning?: string;
+  tone?: string[];
+  colors?: string[];
+  languages?: string[];
+};
+
+export type BusinessEntity = {
+  id: string;
+  businessId: string;
+  type: BusinessEntityType;
+  name: string;
+  attributes: Record<string, unknown>;
+  source?: string;
+  confidence: Confidence;
+  observedAt: IsoDateTime;
+  validFrom?: IsoDateTime;
+  validTo?: IsoDateTime;
+};
+
+export type BusinessRelationshipType =
+  | "owns"
+  | "offers"
+  | "serves"
+  | "competes_with"
+  | "depends_on"
+  | "uses"
+  | "located_at"
+  | "targets"
+  | "influences"
+  | "derived_from"
+  | "related_to";
+
+export type BusinessRelationship = {
+  id: string;
+  businessId: string;
+  fromEntityId: string;
+  toEntityId: string;
+  type: BusinessRelationshipType;
+  confidence: Confidence;
+  source?: string;
+  observedAt: IsoDateTime;
+};
+
+export type BusinessContext = {
+  business: Business;
+  entities: BusinessEntity[];
+  relationships: BusinessRelationship[];
+  activeGoals: BusinessGoal[];
+  activeConstraints: BusinessConstraint[];
+  verticalContext?: Record<string, unknown>;
+  lastUpdatedAt: IsoDateTime;
+};
+
+export type SignalDirection = "positive" | "negative" | "neutral" | "unknown";
+export type SignalType =
+  | "metric_change"
+  | "threshold_breach"
+  | "trend"
+  | "anomaly"
+  | "event"
+  | "feedback"
+  | "opportunity"
+  | "system";
+
+export type BusinessSignal = {
+  id: string;
+  businessId: string;
+  type: SignalType;
+  source: string;
+  metric?: string;
+  value?: number | string | boolean;
+  baseline?: number;
+  deviation?: number;
+  direction: SignalDirection;
+  confidence: Confidence;
+  context: Record<string, unknown>;
+  observedAt: IsoDateTime;
+  entityIds?: string[];
+};
+
+export type EvidenceType = "measurement" | "document" | "review" | "observation" | "integration" | "experiment" | "human_input" | "inference";
+
+export type Evidence = {
+  id: string;
+  businessId: string;
+  type: EvidenceType;
+  source: string;
+  observation: string;
+  data?: Record<string, unknown>;
+  supportingSignalIds?: string[];
+  confidence: Confidence;
+  contradiction?: boolean;
+  observedAt: IsoDateTime;
+};
+
+export type Diagnosis = {
+  id: string;
+  businessId: string;
+  title: string;
+  problem: string;
+  symptoms: string[];
+  rootCauses: string[];
+  impact: string;
+  confidence: Confidence;
+  signalIds: string[];
+  evidenceIds: string[];
+  alternatives?: string[];
+  createdAt: IsoDateTime;
+};
+
+export type Opportunity = {
+  id: string;
+  businessId: string;
+  title: string;
+  description: string;
+  sourceDiagnosisId?: string;
+  impact: Score100;
+  urgency: Score100;
+  confidence: Confidence;
+  effort: Score100;
+  cost: Score100;
+  risk: Score100;
+  roi?: Score100;
+  strategicValue: Score100;
+  timeToResultDays?: number;
+  dependencies: string[];
+  expectedOutcome?: string;
+  relatedKpis: string[];
+};
+
+export type Recommendation = {
+  id: string;
+  businessId: string;
+  opportunityId: string;
+  title: string;
+  rationale: string;
+  actions: string[];
+  expectedOutcome: string;
+  confidence: Confidence;
+  evidenceIds: string[];
+  policyVersion: string;
+};
+
+export type PriorityPolicy = {
+  version: string;
+  impactWeight: number;
+  urgencyWeight: number;
+  confidenceWeight: number;
+  expectedValueWeight: number;
+  effortWeight: number;
+  costWeight: number;
+  riskWeight: number;
+  strategicValueWeight: number;
+  timeToResultWeight: number;
+};
+
+export type PriorityScore = {
+  opportunityId: string;
+  score: Score100;
+  rank?: number;
+  policyVersion: string;
+  factors: Record<string, number>;
+  explanation: string;
+};
+
+export const DEFAULT_PRIORITY_POLICY: PriorityPolicy = {
+  version: "priority-v1",
+  impactWeight: 0.2,
+  urgencyWeight: 0.15,
+  confidenceWeight: 0.15,
+  expectedValueWeight: 0.15,
+  effortWeight: 0.1,
+  costWeight: 0.08,
+  riskWeight: 0.07,
+  strategicValueWeight: 0.07,
+  timeToResultWeight: 0.03,
+};
+
+function clamp100(value: number): number {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function normalizeConfidence(value: number): number {
+  return clamp100(value <= 1 ? value * 100 : value);
+}
+
+export function scoreOpportunity(
+  opportunity: Opportunity,
+  policy: PriorityPolicy = DEFAULT_PRIORITY_POLICY,
+): PriorityScore {
+  const factors = {
+    impact: clamp100(opportunity.impact),
+    urgency: clamp100(opportunity.urgency),
+    confidence: normalizeConfidence(opportunity.confidence),
+    expectedValue: clamp100(opportunity.roi ?? opportunity.impact),
+    effortPenalty: clamp100(opportunity.effort),
+    costPenalty: clamp100(opportunity.cost),
+    riskPenalty: clamp100(opportunity.risk),
+    strategicValue: clamp100(opportunity.strategicValue),
+    timeToResultPenalty: clamp100((opportunity.timeToResultDays ?? 30) / 90 * 100),
+  };
+
+  const positive =
+    factors.impact * policy.impactWeight +
+    factors.urgency * policy.urgencyWeight +
+    factors.confidence * policy.confidenceWeight +
+    factors.expectedValue * policy.expectedValueWeight +
+    factors.strategicValue * policy.strategicValueWeight;
+  const penalties =
+    factors.effortPenalty * policy.effortWeight +
+    factors.costPenalty * policy.costWeight +
+    factors.riskPenalty * policy.riskWeight +
+    factors.timeToResultPenalty * policy.timeToResultWeight;
+
+  const score = clamp100(positive - penalties);
+
+  return {
+    opportunityId: opportunity.id,
+    score,
+    policyVersion: policy.version,
+    factors,
+    explanation: `Priority ${score.toFixed(1)}/100 using ${policy.version}: impact, urgency, confidence, value and strategic value balanced against effort, cost, risk and time-to-result.`,
+  };
+}
+
+export function rankOpportunities(
+  opportunities: readonly Opportunity[],
+  policy: PriorityPolicy = DEFAULT_PRIORITY_POLICY,
+): PriorityScore[] {
+  return opportunities
+    .map((opportunity) => scoreOpportunity(opportunity, policy))
+    .sort((a, b) => b.score - a.score)
+    .map((score, index) => ({ ...score, rank: index + 1 }));
+}
