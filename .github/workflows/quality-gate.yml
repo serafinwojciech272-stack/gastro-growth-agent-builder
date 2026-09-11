@@ -41,6 +41,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit contracts
+        run: npm run test:unit
+
       - name: Production build
         run: npm run build
 
