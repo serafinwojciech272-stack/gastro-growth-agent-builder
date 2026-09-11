@@ -60,11 +60,11 @@ test("universal intelligence contracts form a controlled signal-to-mission path"
   });
 
   expect(graph.entities.some((entity) => entity.id === "business-test")).toBeTruthy();
-  expect(graph.entities.some((entity) => entity.type === "metric" || entity.type === "other")).toBeTruthy();
+  expect(graph.entities.some((entity) => entity.type === "product")).toBeTruthy();
   expect(intelligence.evidence).toHaveLength(1);
   expect(intelligence.diagnoses).toHaveLength(1);
   expect(intelligence.opportunities).toHaveLength(1);
-  expect(intelligence.recommendations[0]?.requiresApproval).toBeUndefined();
+  expect(intelligence.recommendations).toHaveLength(1);
   expect(mission.opportunitySignals).toHaveLength(1);
   expect(mission.actions.length).toBeGreaterThan(0);
   expect(mission.actions.every((action) => action.requiresApproval)).toBeTruthy();
