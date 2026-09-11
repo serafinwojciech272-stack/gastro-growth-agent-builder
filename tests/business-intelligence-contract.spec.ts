@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { buildBusinessIntelligence } from "../src/domain/businessIntelligencePipeline";
-import { adaptBusinessIntelligenceToMission } from "../src/domain/businessIntelligenceMissionAdapter";
+import { createGrowthDecisionFromUniversal } from "../src/domain/universalMissionBridge";
 import { buildBusinessKnowledgeGraph } from "../src/domain/businessKnowledgeGraph";
 import type { BusinessContext, BusinessSignal } from "../src/domain/universalBusinessCore";
 
@@ -53,11 +53,24 @@ test("universal intelligence contracts form a controlled signal-to-mission path"
 
   const graph = buildBusinessKnowledgeGraph(context, signals);
   const intelligence = buildBusinessIntelligence({ context, signals });
-  const mission = adaptBusinessIntelligenceToMission({
-    context,
-    signals,
-    recommendations: intelligence.recommendations,
-  });
+  const decision = createGrowthDecisionFromUniversal(
+    {
+      vertical: "restaurant",
+      businessId: "business-test",
+      objective: "Increase conversion",
+      kpis: [{ key: "conversion_rate", label: "Conversion rate", unit: "percentage" }],
+      recentOutcomes: [],
+    },
+    intelligence.opportunities,
+    [{
+      id: "action-1",
+      title: "conversion_rate remediation",
+      description: "Prepare controlled conversion remediation",
+      risk: "medium",
+      autonomyLevel: 1,
+      requiresApproval: true,
+    }],
+  );
 
   expect(graph.entities.some((entity) => entity.id === "business-test")).toBeTruthy();
   expect(graph.entities.some((entity) => entity.type === "product")).toBeTruthy();
@@ -65,8 +78,7 @@ test("universal intelligence contracts form a controlled signal-to-mission path"
   expect(intelligence.diagnoses).toHaveLength(1);
   expect(intelligence.opportunities).toHaveLength(1);
   expect(intelligence.recommendations).toHaveLength(1);
-  expect(mission.opportunitySignals).toHaveLength(1);
-  expect(mission.actions.length).toBeGreaterThan(0);
-  expect(mission.actions.every((action) => action.requiresApproval)).toBeTruthy();
-  expect(mission.decisionContext.businessId).toBe("business-test");
+  expect(decision?.primaryOpportunity.id).toBe("opportunity:signal-1");
+  expect(decision?.actions).toHaveLength(1);
+  expect(decision?.actions[0]?.requiresApproval).toBeTruthy();
 });
