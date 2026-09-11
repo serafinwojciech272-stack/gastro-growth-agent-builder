@@ -1,4 +1,12 @@
-import type { BusinessContext, BusinessSignal, Diagnosis, Evidence, Opportunity, Recommendation } from "./businessIntelligenceContracts";
+import type {
+  BusinessContext,
+  BusinessSignal,
+  Diagnosis,
+  Evidence,
+  Opportunity,
+  Recommendation,
+  PriorityScore,
+} from "./universalBusinessCore";
 import { rankPriorityCandidates } from "./priorityEngine";
 
 export type IntelligencePipelineInput = {
@@ -11,82 +19,91 @@ export type IntelligencePipelineResult = {
   diagnoses: Diagnosis[];
   opportunities: Opportunity[];
   recommendations: Recommendation[];
-  priorities: ReturnType<typeof rankPriorityCandidates>;
+  priorities: PriorityScore[];
 };
 
-const scoreConfidence = (confidence: BusinessSignal["confidence"]): number =>
-  confidence === "high" ? 90 : confidence === "medium" ? 70 : 45;
+const confidence100 = (confidence: number): number => Math.max(0, Math.min(100, confidence <= 1 ? confidence * 100 : confidence));
+const material = (signal: BusinessSignal): boolean => signal.deviation !== undefined && Math.abs(signal.deviation) >= 10;
 
-const evidenceForSignal = (context: BusinessContext, signal: BusinessSignal): Evidence => ({
+const evidenceForSignal = (signal: BusinessSignal): Evidence => ({
   id: `evidence:${signal.id}`,
-  businessId: context.businessId,
-  signalIds: [signal.id],
-  claim: `${signal.metric} changed${signal.deltaPercent === undefined ? "" : ` by ${signal.deltaPercent}%`}.`,
-  observation: `${signal.source} reported ${String(signal.value)}${signal.unit ? ` ${signal.unit}` : ""}.`,
+  businessId: signal.businessId,
+  type: "measurement",
   source: signal.source,
-  strength: scoreConfidence(signal.confidence),
-  confidence: signal.confidence,
-  capturedAt: signal.observedAt,
+  observation: `${signal.metric ?? signal.type} reported ${String(signal.value)}${signal.deviation === undefined ? "" : ` with ${signal.deviation} deviation`}.`,
+  data: {
+    metric: signal.metric,
+    value: signal.value,
+    baseline: signal.baseline,
+    deviation: signal.deviation,
+    direction: signal.direction,
+  },
+  supportingSignalIds: [signal.id],
+  confidence: confidence100(signal.confidence),
+  observedAt: signal.observedAt,
 });
 
 export function buildBusinessIntelligence(input: IntelligencePipelineInput): IntelligencePipelineResult {
   const { context, signals } = input;
-  const evidence = signals.map((signal) => evidenceForSignal(context, signal));
-  const materialSignals = signals.filter((signal) => signal.deltaPercent !== undefined && Math.abs(signal.deltaPercent ?? 0) >= 10);
+  const evidence = signals.map(evidenceForSignal);
+  const materialSignals = signals.filter(material);
 
-  const diagnoses: Diagnosis[] = materialSignals.map((signal) => ({
-    id: `diagnosis:${signal.id}`,
-    businessId: context.businessId,
-    title: `${signal.metric} requires attention`,
-    problem: `${signal.metric} moved materially against its observed baseline.`,
-    mechanism: `The ${signal.source} signal indicates a measurable change that may affect ${context.name}.`,
-    evidenceIds: [`evidence:${signal.id}`],
-    confidence: signal.confidence,
-    confidenceScore: scoreConfidence(signal.confidence),
-    affectedDomains: [signal.source],
-    status: "active",
-    createdAt: signal.observedAt,
-  }));
+  const diagnoses: Diagnosis[] = materialSignals.map((signal) => {
+    const metric = signal.metric ?? signal.type;
+    const negative = signal.direction === "negative" || (signal.deviation ?? 0) < 0;
+    return {
+      id: `diagnosis:${signal.id}`,
+      businessId: context.business.id,
+      title: `${metric} requires attention`,
+      problem: `${metric} moved materially ${negative ? "against" : "from"} its observed baseline.`,
+      symptoms: [`${metric}: ${String(signal.value)}`, `Deviation: ${signal.deviation ?? "n/a"}`],
+      rootCauses: ["Root cause requires validation against business context and supporting evidence."],
+      impact: `Potential impact on ${context.business.name} requires measurement.`,
+      confidence: confidence100(signal.confidence),
+      signalIds: [signal.id],
+      evidenceIds: [`evidence:${signal.id}`],
+      alternatives: ["Measurement error", "Temporary market or operational change"],
+      createdAt: signal.observedAt,
+    };
+  });
 
-  const opportunities: Opportunity[] = diagnoses.map((diagnosis, index) => {
-    const signal = materialSignals[index];
-    const magnitude = Math.min(100, Math.round(Math.abs(signal.deltaPercent ?? 0) * 2));
+  const opportunities: Opportunity[] = materialSignals.map((signal, index) => {
+    const diagnosis = diagnoses[index];
+    const magnitude = Math.min(100, Math.round(Math.abs(signal.deviation ?? 0) * 2));
     return {
       id: `opportunity:${signal.id}`,
-      businessId: context.businessId,
-      diagnosisId: diagnosis.id,
-      title: `Improve ${signal.metric}`,
-      desiredOutcome: `Reverse the negative movement in ${signal.metric} while protecting business constraints.`,
-      impactScore: magnitude,
-      confidenceScore: diagnosis.confidenceScore,
-      effortScore: 50,
-      riskScore: 20,
-      urgencyScore: magnitude,
-      affectedDomains: diagnosis.affectedDomains,
-      status: "active",
-      createdAt: signal.observedAt,
+      businessId: context.business.id,
+      title: `Improve ${signal.metric ?? signal.type}`,
+      description: `Investigate and improve the diagnosed ${signal.metric ?? signal.type} movement without violating active business constraints.`,
+      sourceDiagnosisId: diagnosis.id,
+      impact: magnitude,
+      urgency: magnitude,
+      confidence: confidence100(signal.confidence),
+      effort: 50,
+      cost: 30,
+      risk: 20,
+      roi: magnitude,
+      strategicValue: 50,
+      timeToResultDays: 30,
+      dependencies: [],
+      expectedOutcome: `Reverse the adverse movement in ${signal.metric ?? signal.type} and verify the result with a measured outcome.`,
+      relatedKpis: [signal.metric ?? signal.type],
     };
   });
 
   const recommendations: Recommendation[] = opportunities.map((opportunity) => ({
     id: `recommendation:${opportunity.id}`,
-    businessId: context.businessId,
+    businessId: context.business.id,
     opportunityId: opportunity.id,
     title: `Create a controlled remediation mission for ${opportunity.title.toLowerCase()}`,
-    rationale: `Address the diagnosed issue using evidence-backed actions and measure the outcome before expanding automation.`,
+    rationale: "Use evidence-backed preparation, preview the proposed change, require approval, then measure the outcome before increasing automation.",
     actions: ["Validate diagnosis", "Prepare remediation", "Preview expected changes", "Measure outcome"],
-    expectedOutcome: opportunity.desiredOutcome,
-    priorityScore: 0,
-    confidence: opportunity.confidenceScore >= 80 ? "high" : opportunity.confidenceScore >= 60 ? "medium" : "low",
-    risk: "medium",
-    requiresApproval: true,
-    createdAt: opportunity.createdAt,
+    expectedOutcome: opportunity.expectedOutcome ?? "Measure improvement against the baseline.",
+    confidence: opportunity.confidence,
+    evidenceIds: opportunity.sourceDiagnosisId ? [`evidence:${opportunity.sourceDiagnosisId.replace("diagnosis:", "")}`] : [],
+    policyVersion: "priority-v1",
   }));
 
-  const priorities = rankPriorityCandidates(opportunities.map((opportunity, index) => ({
-    ...opportunity,
-    recommendationId: recommendations[index]?.id,
-  })));
-
+  const priorities = rankPriorityCandidates(opportunities);
   return { evidence, diagnoses, opportunities, recommendations, priorities };
 }
