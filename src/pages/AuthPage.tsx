@@ -34,8 +34,21 @@ export default function AuthPage() {
 
     try {
       const supabase = requireSupabase();
-      const { data: memberships, error: membershipError } = await supabase.from('organization_members').select('organization_id').limit(1);
-      if (membershipError) throw membershipError;
+      // signInWithPassword updates the auth store asynchronously. Read the session
+      // directly here so the workspace query always uses the fresh access token.
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!sessionData.session?.user?.id) throw new Error('Signed in, but no active Supabase session was established. Please try signing in again.');
+
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', sessionData.session.user.id)
+        .limit(1);
+      if (membershipError) {
+        throw new Error(`Unable to determine your workspace (${membershipError.code || 'SUPABASE_ERROR'}): ${membershipError.message}`);
+      }
+
       const next = params.get('next');
       const destination = next && next.startsWith('/') ? next : '/app/dashboard';
       navigate(memberships?.length ? destination : '/app/onboarding', { replace: true });
