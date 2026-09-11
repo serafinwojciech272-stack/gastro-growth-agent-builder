@@ -71,7 +71,6 @@ export function buildBusinessKnowledgeGraph(
   for (const service of business.services) relate(business.id, addEntity("service", service), "offers");
   for (const segment of business.customerSegments) relate(business.id, addEntity("customer_segment", segment), "serves");
   for (const competitor of business.competitors) relate(business.id, addEntity("competitor", competitor), "competes_with");
-  for (const channel of business.channels ?? []) relate(business.id, addEntity("channel", channel), "uses");
   for (const goal of context.activeGoals) relate(business.id, addEntity("goal", goal.title, { metric: goal.metric, target: goal.target }), "targets");
 
   for (const signal of signals) {
