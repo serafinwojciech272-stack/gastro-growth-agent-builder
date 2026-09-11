@@ -4,10 +4,11 @@ import { buildGrowthMissionFromUniversal, type UniversalMissionPlan } from "./un
 import { collectBusinessSignals, type SignalProducerKind, type SignalProducerResult } from "./businessSignalProducers";
 import { runDiagnosticCycle, type DiagnosticCycle, type DiagnosticEngineConfig } from "./universalDiagnosticEngine";
 import { validateIntelligenceTraceDetailed, type IntelligenceTraceError } from "./universalBusinessIntelligence";
+import { websiteAuditFromBusinessContext } from "./websiteAuditAdapter";
 
 export type UniversalGrowthIntelligenceInput = {
   business: BusinessContext;
-  sources: Partial<Record<SignalProducerKind, unknown>>;
+  sources?: Partial<Record<SignalProducerKind, unknown>>;
   growthContext?: GrowthDecisionContext;
   actions?: readonly GrowthAction[];
   measurementKpis?: readonly GrowthKpi[];
@@ -26,23 +27,34 @@ export type UniversalGrowthIntelligenceCycle = {
 
 function normalizeEvidence(businessId: string, evidence: readonly Evidence[]): Evidence[] {
   return [...new Map(
-    evidence
-      .filter((item) => item.businessId === businessId)
-      .map((item) => [item.id, item]),
+    evidence.filter((item) => item.businessId === businessId).map((item) => [item.id, item]),
   ).values()];
 }
 
 function normalizeSignals(businessId: string, signals: readonly BusinessSignal[]): BusinessSignal[] {
   return [...new Map(
-    signals
-      .filter((item) => item.businessId === businessId)
-      .map((item) => [item.id, item]),
+    signals.filter((item) => item.businessId === businessId).map((item) => [item.id, item]),
   ).values()];
+}
+
+function resolveSources(
+  context: BusinessContext,
+  sources: Partial<Record<SignalProducerKind, unknown>> | undefined,
+): Partial<Record<SignalProducerKind, unknown>> {
+  const resolved = { ...(sources ?? {}) };
+  if (resolved.website === undefined) {
+    const websiteAudit = websiteAuditFromBusinessContext(context);
+    if (websiteAudit) resolved.website = websiteAudit;
+  }
+  return resolved;
 }
 
 export function runUniversalGrowthIntelligenceCycle(input: UniversalGrowthIntelligenceInput): UniversalGrowthIntelligenceCycle {
   const businessId = input.business.business.id;
-  const producerResult = collectBusinessSignals({ business: input.business }, input.sources);
+  const producerResult = collectBusinessSignals(
+    { business: input.business },
+    resolveSources(input.business, input.sources),
+  );
   const signals = normalizeSignals(businessId, producerResult.signals);
   const producerEvidence = normalizeEvidence(businessId, producerResult.evidence);
   const diagnostic = runDiagnosticCycle(businessId, signals, producerEvidence, input.diagnosticConfig);
