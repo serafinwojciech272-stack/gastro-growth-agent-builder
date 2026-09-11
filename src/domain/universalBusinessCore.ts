@@ -1,5 +1,4 @@
 import type { GrowthVerticalId } from "../config/verticals";
-
 export const UNIVERSAL_CORE_CONTRACT_VERSION = "1.0.0" as const;
 export type IsoDateTime = string;
 export type Confidence = number;
@@ -8,7 +7,7 @@ export type BusinessEntityType = "business" | "location" | "product" | "service"
 export type BusinessModel = "b2b" | "b2c" | "b2b2c" | "marketplace" | "subscription" | "transactional" | "hybrid" | "unknown";
 export type Business = { id: string; organizationId: string; workspaceId?: string; name: string; legalName?: string; industry: GrowthVerticalId | string; businessModel: BusinessModel; websiteUrl?: string; locale?: string; timezone?: string; locations: string[]; products: string[]; services: string[]; customerSegments: string[]; competitors: string[]; goals: BusinessGoal[]; constraints: BusinessConstraint[]; brand?: BusinessBrand; createdAt: IsoDateTime; updatedAt: IsoDateTime };
 export type BusinessGoal = { id: string; businessId: string; title: string; description?: string; metric?: string; baseline?: number; target?: number; unit?: string; priority: Score100; status: "active" | "paused" | "completed" | "cancelled"; deadline?: IsoDateTime };
-export type BusinessConstraint = { id: string; type: "budget" | "capacity" | "time" | "compliance" | "brand" | "technology" | "strategic" | "other"; description: string; severity: "soft" | "hard" };
+export type BusinessConstraint = { type: "budget" | "capacity" | "time" | "compliance" | "brand" | "technology" | "strategic" | "other"; description: string; severity: "soft" | "hard" };
 export type BusinessBrand = { name?: string; positioning?: string; tone?: string[]; colors?: string[]; languages?: string[] };
 export type BusinessEntity = { id: string; businessId: string; type: BusinessEntityType; name: string; attributes: Record<string, unknown>; source?: string; confidence: Confidence; observedAt: IsoDateTime; validFrom?: IsoDateTime; validTo?: IsoDateTime };
 export type BusinessRelationshipType = "owns" | "offers" | "serves" | "competes_with" | "depends_on" | "uses" | "located_at" | "targets" | "influences" | "derived_from" | "related_to";
