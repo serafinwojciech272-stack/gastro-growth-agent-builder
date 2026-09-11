@@ -5,7 +5,7 @@ type Mission = { id: string; title: string; goal: string; priority: number; stat
 type Action = { id: string; mission_id: string; title: string; description: string | null; status: string; impact_score: number; effort_score: number; risk_level: string; due_at: string | null };
 type Measurement = { id: string; mission_id: string; kpi: string; before_value: number | null; after_value: number | null; delta: number | null; confidence: number; measured_at: string };
 type Learning = { id: string; kpi: string; recommendation: string; confidence: number; sample_size: number; created_at: string };
-type Props = { score?: number | null; restaurantName?: string | null; missions?: Mission[]; actions?: Action[]; measurements?: Measurement[]; learning?: Learning[]; onApprove?: (missionId: string) => Promise<void> };
+type Props = { score?: number | null; restaurantName?: string | null; rating?: number | null; reviews?: number | null; missions?: Mission[]; actions?: Action[]; measurements?: Measurement[]; learning?: Learning[]; onApprove?: (missionId: string) => Promise<void> };
 type Metric = { label: string; value: string; Icon: typeof Gauge };
 
 export default function GrowthCommandCenter({ score, restaurantName, missions = [], actions = [], measurements = [], learning = [], onApprove }: Props) {
