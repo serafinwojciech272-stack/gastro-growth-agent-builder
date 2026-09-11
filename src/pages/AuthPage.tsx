@@ -2,15 +2,14 @@ import { FormEvent, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, LockKeyhole, Mail, UtensilsCrossed } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { requireSupabase } from '../lib/supabase';
 
 export default function AuthPage() {
   const { configured, loading: authLoading, signIn, signUp, resetPasswordForEmail } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<'login' | 'signup'>(
-    location.pathname === '/signup' || location.pathname === '/register' || params.get('mode') === 'signup' ? 'signup' : 'login'
-  );
+  const [mode, setMode] = useState<'login' | 'signup'>(location.pathname === '/signup' || location.pathname === '/register' || params.get('mode') === 'signup' ? 'signup' : 'login');
   const [forgotMode, setForgotMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,11 +29,21 @@ export default function AuthPage() {
     if (mode === 'signup' && password !== confirmPassword) { setError('Passwords do not match.'); return; }
     setBusy(true);
     const result = mode === 'login' ? await signIn(normalizedEmail, password) : await signUp(normalizedEmail, password);
-    setBusy(false);
-    if (result.error) { setError(result.error.message); return; }
-    if (mode === 'signup') { setMessage('Account created. If email confirmation is enabled, check your inbox.'); setPassword(''); setConfirmPassword(''); return; }
-    const next = params.get('next');
-    navigate(next && next.startsWith('/') ? next : '/app/dashboard', { replace: true });
+    if (result.error) { setBusy(false); setError(result.error.message); return; }
+    if (mode === 'signup') { setBusy(false); setMessage('Account created. If email confirmation is enabled, check your inbox.'); setPassword(''); setConfirmPassword(''); return; }
+
+    try {
+      const supabase = requireSupabase();
+      const { data: memberships, error: membershipError } = await supabase.from('organization_members').select('organization_id').limit(1);
+      if (membershipError) throw membershipError;
+      const next = params.get('next');
+      const destination = next && next.startsWith('/') ? next : '/app/dashboard';
+      navigate(memberships?.length ? destination : '/app/onboarding', { replace: true });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to determine your workspace.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleReset(event: FormEvent<HTMLFormElement>) {
