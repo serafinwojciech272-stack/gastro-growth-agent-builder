@@ -28,9 +28,19 @@ export default function AuthPage() {
     if (password.length < 8) { setError('Password must be at least 8 characters long.'); return; }
     if (mode === 'signup' && password !== confirmPassword) { setError('Passwords do not match.'); return; }
     setBusy(true);
-    const result = mode === 'login' ? await signIn(normalizedEmail, password) : await signUp(normalizedEmail, password);
+
+    if (mode === 'signup') {
+      const result = await signUp(normalizedEmail, password);
+      setBusy(false);
+      if (result.error) { setError(result.error.message); return; }
+      setMessage('Account created. If email confirmation is enabled, check your inbox.');
+      setPassword('');
+      setConfirmPassword('');
+      return;
+    }
+
+    const result = await signIn(normalizedEmail, password);
     if (result.error) { setBusy(false); setError(result.error.message); return; }
-    if (mode === 'signup') { setBusy(false); setMessage('Account created. If email confirmation is enabled, check your inbox.'); setPassword(''); setConfirmPassword(''); return; }
 
     try {
       const supabase = requireSupabase();
