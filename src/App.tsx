@@ -2,7 +2,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import AuthPage from "./pages/AuthPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
-import PublicSite from "./pages/PublicSite";
+import PublicSite from "./pages/PublicSiteUniversal";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ProtectedRoute from "./components/ProtectedRoute";
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
