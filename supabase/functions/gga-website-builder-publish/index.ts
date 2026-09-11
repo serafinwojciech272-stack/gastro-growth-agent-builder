@@ -1,3 +1,17 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const ALLOWED = ['https://gastrogrowthadvisor.com', 'https://gastro-growth-agent-builder.vercel.app'];
+const VERCEL_PROJECT_ID = 'prj_BdtkPYBCwh6v8mrHYAhyq5PN7xbJ';
+const CLOUDFLARE_PROJECT_DEFAULT = 'gga-generated-sites';
+const CORS_HEADERS = {
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Vary': 'Origin',
+};
+
+type Project = { id: string; user_id: string; name: string; artifacts: Record<string, unknown>; version: number; active_stage: number; completed_stages: number[]; status: string };
+type Node = { id: string; component: string; props?: Record<string, unknown>; accessibility?: Record<string, unknown> };
+type Page = { id: string; path: string; nodes: Node[] };
 
 function cors(req: Request) {
   const origin = req.headers.get('Origin') || '';
@@ -19,3 +33,149 @@ function firstText(value: unknown): string {
   }
   return '';
 }
+function lookup(content: Record<string, unknown>, refs: unknown[]) {
+  const pools = ['entities', 'facts', 'claims', 'sections', 'ctas', 'faqs', 'proposedCopy'];
+  for (const pool of pools) {
+    const items = Array.isArray(content[pool]) ? content[pool] : [];
+    for (const ref of refs) {
+      if (typeof ref !== 'string') continue;
+      const hit = items.find((x: any) => x && typeof x === 'object' && (x.id === ref || x.key === ref || x.slug === ref));
+      if (hit) { const t = firstText(hit); if (t) return t; }
+    }
+  }
+  return '';
+}
+function renderNode(node: Node, content: Record<string, unknown>) {
+  const refs = Array.isArray(node.props?.contentRefs) ? node.props?.contentRefs as unknown[] : [];
+  const resolved = lookup(content, refs) || firstText(refs) || node.component.replace(/([a-z])([A-Z])/g, '$1 $2');
+  const c = node.component;
+  const heading = ['Hero', 'About', 'Offer', 'Venue', 'Timeline', 'Faq', 'Testimonials', 'Contact'].includes(c) ? 'h2' : 'h3';
+  if (c === 'SiteHeader') return `<header><strong>${esc(resolved)}</strong><nav><a href="#contact">Contact</a></nav></header>`;
+  if (c === 'Footer') return `<footer>${esc(resolved)}</footer>`;
+  if (c === 'Cta' || c === 'Contact') return `<section id="contact" class="cta"><${heading}>${esc(resolved)}</${heading}><a class="button" href="#contact">Get started</a></section>`;
+  return `<section><${heading}>${esc(resolved)}</${heading}><p>${esc(resolved)}</p></section>`;
+}
+function buildHtml(project: Project) {
+  const brand = (project.artifacts['Brand Extraction'] || {}) as Record<string, unknown>;
+  const content = (project.artifacts['Content Intelligence'] || {}) as Record<string, unknown>;
+  const visual = (project.artifacts['Visual Direction'] || {}) as Record<string, unknown>;
+  const layout = (project.artifacts['Component Generation'] || {}) as Record<string, unknown>;
+  const pages = Array.isArray(layout.pages) ? layout.pages as Page[] : [];
+  const colors = visual.color && typeof visual.color === 'object' ? visual.color as Record<string, unknown> : {};
+  const primary = text(brand.primaryCta, 'Get started');
+  const title = text(brand.businessName, project.name);
+  const headline = text(brand.headline, title);
+  const sub = text(brand.subheadline, 'Clear, trustworthy and conversion-focused.');
+  const bg = text(colors.background, '#0b0d12');
+  const fg = text(colors.text, '#f4f5f7');
+  const accent = text(colors.primary, '#ffffff');
+  const body = pages.map((page, i) => `<main data-path="${esc(page.path || '/')}">${i === 0 ? `<div class="hero"><span class="eyebrow">${esc(title)}</span><h1>${esc(headline)}</h1><p>${esc(sub)}</p><a class="button" href="#contact">${esc(primary)}</a></div>` : ''}${(page.nodes || []).map((n) => renderNode(n, content)).join('')}</main>`).join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="generator" content="GA Universal Website Builder"><title>${esc(title)}</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:${esc(bg)};color:${esc(fg)};font:16px/1.6 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:0 24px 72px}header{display:flex;justify-content:space-between;align-items:center;padding:24px 0;position:sticky;top:0;background:${esc(bg)}dd;backdrop-filter:blur(12px);z-index:2}nav a,a{color:${esc(accent)};text-decoration:none}.hero{min-height:72vh;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:80px 0}.eyebrow{opacity:.7;text-transform:uppercase;letter-spacing:.12em}.hero h1{font-size:clamp(42px,7vw,88px);line-height:.98;max-width:900px;margin:18px 0}.hero p{font-size:20px;max-width:720px;opacity:.8}.button{display:inline-block;padding:13px 20px;border-radius:12px;background:${esc(accent)};color:${esc(bg)};font-weight:700;margin-top:14px}section{padding:48px 0;border-top:1px solid #ffffff18}section h2{font-size:34px;margin:0 0 12px}section h3{font-size:25px;margin:0 0 8px}section p{max-width:760px;opacity:.78}.cta{padding:64px 0}footer{padding:40px 0;opacity:.6;border-top:1px solid #ffffff18}@media(max-width:767px){main{padding:0 18px 48px}.hero{min-height:65vh;padding:56px 0}.hero h1{font-size:48px}header{padding:18px 0}}</style></head><body>${body || `<main><div class="hero"><h1>${esc(headline)}</h1><p>${esc(sub)}</p><a class="button" href="#contact">${esc(primary)}</a></div></main>`}</body></html>`;
+}
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function base64(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+async function cfApi(path: string, token: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set('Authorization', `Bearer ${token}`);
+  const r = await fetch(`https://api.cloudflare.com/client/v4${path}`, { ...init, headers });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.success === false) throw new Error(`Cloudflare API failed (${r.status}): ${firstText(j) || JSON.stringify(j)}`);
+  return j;
+}
+async function ensureCfProject(account: string, token: string, project: string) {
+  const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/${encodeURIComponent(project)}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (r.ok) return;
+  await cfApi(`/accounts/${account}/pages/projects`, token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: project, production_branch: 'main' }) });
+}
+async function publishCloudflare(html: string, manifestObject: Record<string, unknown>, account: string, token: string, project: string) {
+  await ensureCfProject(account, token, project);
+  const tokenResponse = await cfApi(`/accounts/${account}/pages/projects/${encodeURIComponent(project)}/upload-token`, token);
+  const jwt = tokenResponse.result && tokenResponse.result.jwt;
+  if (!jwt) throw new Error('Cloudflare upload token was not returned');
+  const files = [
+    { path: 'index.html', data: html, type: 'text/html; charset=utf-8' },
+    { path: 'ga-builder-manifest.json', data: JSON.stringify(manifestObject), type: 'application/json' },
+  ];
+  const assets = await Promise.all(files.map(async (f) => ({ ...f, hash: await sha256(f.data) })));
+  const missingResponse = await fetch('https://api.cloudflare.com/client/v4/pages/assets/check-missing', { method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ hashes: assets.map((a) => a.hash) }) });
+  const missingJson = await missingResponse.json().catch(() => ({}));
+  if (!missingResponse.ok) throw new Error(`Cloudflare asset check failed (${missingResponse.status})`);
+  const missing = Array.isArray(missingJson.result) ? missingJson.result : assets.map((a) => a.hash);
+  for (const asset of assets) {
+    if (!missing.includes(asset.hash)) continue;
+    const upload = await fetch('https://api.cloudflare.com/client/v4/pages/assets/upload', { method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' }, body: JSON.stringify([{ key: asset.hash, value: base64(asset.data), base64: true, metadata: { contentType: asset.type } }]) });
+    const uploadJson = await upload.json().catch(() => ({}));
+    if (!upload.ok || uploadJson.success === false) throw new Error(`Cloudflare asset upload failed (${upload.status}): ${firstText(uploadJson) || JSON.stringify(uploadJson)}`);
+  }
+  const form = new FormData();
+  form.append('manifest', JSON.stringify(Object.fromEntries(assets.map((a) => [a.path, a.hash]))));
+  form.append('branch', 'main');
+  const deploy = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/${encodeURIComponent(project)}/deployments`, { method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form });
+  const deployJson = await deploy.json().catch(() => ({}));
+  if (!deploy.ok || deployJson.success === false) throw new Error(`Cloudflare deployment failed (${deploy.status}): ${firstText(deployJson) || JSON.stringify(deployJson)}`);
+  const d = deployJson.result || {};
+  const aliases = Array.isArray(d.aliases) ? d.aliases : [];
+  return { id: String(d.id || ''), url: aliases[0] || `https://${project}.pages.dev`, status: 'success', provider: 'cloudflare-pages', project, accountId: account };
+}
+
+Deno.serve(async (req) => {
+  const h = cors(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: h });
+  if (req.method !== 'POST') return out({ error: 'Method not allowed' }, 405, h);
+  try {
+    const authorization = req.headers.get('Authorization');
+    if (!authorization?.startsWith('Bearer ')) return out({ error: 'Authentication required' }, 401, h);
+    const url = Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('SUPABASE_ANON_KEY');
+    if (!url || !key) throw new Error('Supabase environment is incomplete');
+    const sb = createClient(url, key, { global: { headers: { Authorization: authorization } } });
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return out({ error: 'Invalid session' }, 401, h);
+    const body = await req.json().catch(() => null);
+    const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
+    if (!projectId) return out({ error: 'projectId is required' }, 400, h);
+    const q = await sb.from('website_builder_projects').select('*').eq('id', projectId).eq('user_id', user.id).single();
+    if (q.error) throw q.error;
+    const project = q.data as Project;
+    const qa = project.artifacts?.QA as Record<string, unknown> | undefined;
+    const completed = Array.isArray(project.completed_stages) ? project.completed_stages : [];
+    if (!completed.includes(9)) return out({ error: 'QA must be completed before Publish.' }, 409, h);
+    if (qa?.releaseGate === 'BLOCKED') return out({ error: 'Publish blocked by QA release gate.' }, 409, h);
+    if (project.status === 'published') return out({ project, publish: project.artifacts?.Publish }, 200, h);
+    const html = buildHtml(project);
+    const manifest = { schemaVersion: '2.0', projectId: project.id, projectName: project.name, sourceUrl: (project.artifacts.Project as any)?.sourceUrl || null, version: Number(project.version) + 1 };
+    let deployment: any;
+    const cfToken = Deno.env.get('CLOUDFLARE_API_TOKEN');
+    const cfAccount = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
+    const cfProject = Deno.env.get('CLOUDFLARE_PAGES_PROJECT') || CLOUDFLARE_PROJECT_DEFAULT;
+    if (cfToken && cfAccount) {
+      deployment = await publishCloudflare(html, manifest, cfAccount, cfToken, cfProject);
+    } else {
+      const token = Deno.env.get('VERCEL_TOKEN');
+      if (!token) return out({ error: 'No production publisher configured. Add CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID for free Cloudflare Pages, or VERCEL_TOKEN for Vercel.' }, 503, h);
+      const deploymentBody = { name: 'gastro-growth-agent-builder', project: VERCEL_PROJECT_ID, target: 'production', files: [{ file: 'index.html', data: html }, { file: 'ga-builder-manifest.json', data: JSON.stringify(manifest) }], meta: { builderProjectId: project.id } };
+      const deploy = await fetch('https://api.vercel.com/v13/deployments', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(deploymentBody) });
+      const deployJson = await deploy.json().catch(() => ({}));
+      if (!deploy.ok) throw new Error(`Vercel deployment failed (${deploy.status}): ${firstText(deployJson) || 'unknown error'}`);
+      const deploymentUrl = typeof deployJson.url === 'string' ? `https://${deployJson.url}` : '';
+      if (!deploymentUrl) throw new Error('Vercel deployment returned no URL');
+      deployment = { provider: 'vercel', projectId: VERCEL_PROJECT_ID, deploymentId: String(deployJson.id || ''), url: deploymentUrl, target: 'production', status: String(deployJson.readyState || 'QUEUED') };
+    }
+    const publish = { schemaVersion: '2.0', type: 'production-release', publishedAt: new Date().toISOString(), version: Number(project.version) + 1, qaGate: String(qa?.releaseGate || 'PASS'), qaScore: Number(qa?.score || 0), rollbackVersion: Number(project.version), releaseId: `rel_${project.id.slice(0, 8)}_${Date.now()}`, deployment, artifact: { type: 'static-html', bytes: new TextEncoder().encode(html).byteLength } };
+    const nextCompleted = Array.from(new Set([...completed, 10])).sort((a, b) => a - b);
+    const update = await sb.from('website_builder_projects').update({ status: 'published', active_stage: 10, completed_stages: nextCompleted, artifacts: { ...project.artifacts, Publish: publish }, version: Number(project.version) + 1 }).eq('id', project.id).eq('user_id', user.id).select('*').single();
+    if (update.error) throw update.error;
+    return out({ project: update.data, publish }, 200, h);
+  } catch (error) {
+    console.error('builder publish', error);
+    return out({ error: error instanceof Error ? error.message : 'Publish failed' }, 502, h);
+  }
+});
