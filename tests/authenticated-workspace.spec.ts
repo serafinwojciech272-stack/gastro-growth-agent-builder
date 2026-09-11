@@ -9,7 +9,7 @@ const routes = [
   { path: '/app/missions', marker: 'Mission Control' },
   { path: '/app/website-builder', marker: 'Growth Advisor Website Builder' },
   { path: '/app/menu', marker: 'Menu Intelligence' },
-  { path: '/app/actions', marker: 'Actions' },
+  { path: '/app/actions', marker: 'Action Center' },
 ];
 
 test.describe('GA authenticated workspace', () => {
@@ -26,9 +26,7 @@ test.describe('GA authenticated workspace', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     await page.waitForURL(/\/app\/(dashboard|onboarding)/, { timeout: 30_000 });
 
-    if (page.url().includes('/app/onboarding')) {
-      test.skip(true, 'Authenticated account has not completed onboarding.');
-    }
+    if (page.url().includes('/app/onboarding')) test.skip(true, 'Authenticated account has not completed onboarding.');
 
     for (const route of routes) {
       await page.goto(route.path);
