@@ -1,13 +1,12 @@
-import type { BusinessContext, BusinessSignal, Recommendation } from "./businessIntelligenceContracts";
+import type { BusinessContext, BusinessSignal, Recommendation } from "./universalBusinessCore";
 import type { GrowthAction, GrowthDecisionContext, GrowthKpi } from "./growthTypes";
 import type { OpportunitySignal } from "./growthDecisionEngine";
 import { getVerticalConfig } from "../config/verticals";
 
 /**
  * Bridge from the universal Business Intelligence domain to the existing
- * Growth/Mission Control Plane. This deliberately does not create a second
- * mission engine: it only translates typed intelligence into the contracts
- * consumed by the existing autoMissionPipeline/agentControlPlane.
+ * Growth/Mission Control Plane. This translates contracts; it does not create
+ * a second mission engine.
  */
 export type MissionAdapterInput = {
   context: BusinessContext;
@@ -21,14 +20,12 @@ export type MissionAdapterOutput = {
   actions: GrowthAction[];
 };
 
-const asVertical = (context: BusinessContext): GrowthDecisionContext["vertical"] => {
-  const candidate = context.vertical ?? context.industry;
-  return getVerticalConfig(candidate).id;
-};
+const asVertical = (context: BusinessContext): GrowthDecisionContext["vertical"] =>
+  getVerticalConfig(context.business.industry).id;
 
 const signalToKpi = (signal: BusinessSignal): GrowthKpi => ({
-  key: signal.metric,
-  label: signal.metric,
+  key: signal.metric ?? signal.type,
+  label: signal.metric ?? signal.type,
   unit: typeof signal.value === "number" ? "ratio" : "score",
   baseline: signal.baseline,
   current: typeof signal.value === "number" ? signal.value : undefined,
@@ -46,20 +43,20 @@ const recommendationToOpportunity = (
   signal: BusinessSignal,
 ): OpportunitySignal => ({
   id: recommendation?.id ?? `opportunity:${signal.id}`,
-  title: recommendation?.title ?? `Improve ${signal.metric}`,
-  rationale: recommendation?.rationale ?? `Investigate and improve ${signal.metric} using the available evidence.`,
-  impactScore: Math.min(100, Math.round(Math.abs(signal.deltaPercent ?? 0) * 2)),
-  confidence: signal.confidence === "high" ? 0.9 : signal.confidence === "medium" ? 0.7 : 0.45,
+  title: recommendation?.title ?? `Improve ${signal.metric ?? signal.type}`,
+  rationale: recommendation?.rationale ?? `Investigate and improve ${signal.metric ?? signal.type} using available evidence.`,
+  impactScore: Math.min(100, Math.round(Math.abs(signal.deviation ?? 0) * 2)),
+  confidence: Math.max(0, Math.min(1, signal.confidence <= 1 ? signal.confidence : signal.confidence / 100)),
   effortScore: 50,
-  risk: recommendation?.risk === "high" || recommendation?.risk === "critical" ? "high" : recommendation?.risk === "medium" ? "medium" : "low",
-  relatedKpis: [signal.metric],
+  risk: "medium",
+  relatedKpis: [signal.metric ?? signal.type],
 });
 
 const actionFor = (recommendation: Recommendation | undefined, signal: BusinessSignal, index: number): GrowthAction => ({
   id: `bi-action:${signal.id}:${index + 1}`,
-  title: recommendation?.actions[index] ?? `Investigate ${signal.metric}`,
-  description: recommendation?.rationale ?? `Prepare a controlled action for ${signal.metric}.`,
-  risk: recommendation?.risk === "high" || recommendation?.risk === "critical" ? "high" : "medium",
+  title: recommendation?.actions[index] ?? `Investigate ${signal.metric ?? signal.type}`,
+  description: recommendation?.rationale ?? `Prepare a controlled action for ${signal.metric ?? signal.type}.`,
+  risk: "medium",
   autonomyLevel: 1,
   requiresApproval: true,
   expectedImpact: recommendation?.expectedOutcome,
@@ -69,13 +66,12 @@ const actionFor = (recommendation: Recommendation | undefined, signal: BusinessS
 export function adaptBusinessIntelligenceToMission(input: MissionAdapterInput): MissionAdapterOutput {
   const { context, signals, recommendations } = input;
   const materialSignals = signals.filter(
-    (signal) => signal.deltaPercent !== undefined && Math.abs(signal.deltaPercent) >= 10,
+    (signal) => signal.deviation !== undefined && Math.abs(signal.deviation) >= 10,
   );
   const kpis = signals.map(signalToKpi);
   const opportunitySignals = materialSignals.map((signal) =>
     recommendationToOpportunity(recommendationForSignal(recommendations, signal), signal),
   );
-
   const actions = materialSignals.flatMap((signal) => {
     const recommendation = recommendationForSignal(recommendations, signal);
     const actionCount = recommendation?.actions.length ?? 3;
@@ -84,8 +80,8 @@ export function adaptBusinessIntelligenceToMission(input: MissionAdapterInput): 
 
   const decisionContext: GrowthDecisionContext = {
     vertical: asVertical(context),
-    businessId: context.businessId,
-    objective: context.goals?.[0] ?? `Improve ${context.name}`,
+    businessId: context.business.id,
+    objective: context.business.goals[0]?.title ?? `Improve ${context.business.name}`,
     kpis,
     recentOutcomes: [],
   };
