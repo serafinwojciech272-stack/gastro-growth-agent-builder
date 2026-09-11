@@ -1,0 +1,47 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildBusinessIntelligence } from "./businessIntelligencePipeline";
+import { runIntelligenceControlPlane } from "./intelligenceControlPlane";
+import { measureGrowthOutcome } from "./outcomeLearningEngine";
+import type { BusinessContext, BusinessSignal } from "./universalBusinessCore";
+import type { GrowthAction, GrowthDecisionContext, GrowthKpi } from "./growthTypes";
+
+const context: BusinessContext = {
+  business: {
+    id: "biz-1", organizationId: "org-1", name: "Test Business", industry: "other", businessModel: "b2c",
+    locations: [], products: [], services: [], customerSegments: [], competitors: [], goals: [], constraints: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+  }, entities: [], relationships: [], activeGoals: [], activeConstraints: [], lastUpdatedAt: "2026-01-01T00:00:00Z",
+};
+
+const signal: BusinessSignal = {
+  id: "signal-1", businessId: "biz-1", type: "metric_change", source: "website", metric: "conversion", value: 2.1,
+  baseline: 3, deviation: -30, direction: "negative", confidence: 0.9, context: {}, observedAt: "2026-01-02T00:00:00Z",
+};
+
+const decisionContext: GrowthDecisionContext = { vertical: "other", businessId: "biz-1", objective: "Improve conversion", kpis: [] };
+const actions: GrowthAction[] = [{ id: "action-1", title: "Improve conversion", description: "Remediate", risk: "medium", autonomyLevel: 1, requiresApproval: true }];
+const kpis: GrowthKpi[] = [{ key: "conversion", label: "Conversion", unit: "percentage" }];
+
+test("intelligence pipeline preserves business trace", () => {
+  const result = buildBusinessIntelligence({ context, signals: [signal] });
+  assert.equal(result.traceErrors.length, 0);
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.diagnoses.length, 1);
+  assert.equal(result.opportunities.length, 1);
+  assert.equal(result.recommendations.length, 1);
+  assert.equal(result.priorities.length, 1);
+});
+
+test("control plane produces approval-gated mission plan", () => {
+  const result = runIntelligenceControlPlane({ context, signals: [signal], decisionContext, actions, measurementKpis: kpis });
+  assert.equal(result.traceErrors.length, 0);
+  assert.ok(result.missionPlan);
+  assert.equal(result.missionPlan?.mission.status, "awaiting_approval");
+});
+
+test("measurement derives learning from outcome", () => {
+  const result = measureGrowthOutcome({ missionId: "mission-1", measuredAt: "2026-01-03T00:00:00Z", confidence: 0.9, metrics: { conversion: { baseline: 3, before: 2.1, after: 3.4 } } });
+  assert.equal(result.outcome.status, "success");
+  assert.equal(result.outcome.metrics.conversion.delta, 1.3);
+  assert.equal(result.learning.reusable, true);
+});
