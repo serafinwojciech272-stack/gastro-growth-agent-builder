@@ -3,10 +3,10 @@ import { test, expect } from '@playwright/test';
 const email = process.env.PLAYWRIGHT_EMAIL;
 const password = process.env.PLAYWRIGHT_PASSWORD;
 
-test.describe('Growth Advisor Website Builder smoke', () => {
+test.describe('GA Website Builder smoke', () => {
   test.skip(!email || !password, 'Set PLAYWRIGHT_EMAIL and PLAYWRIGHT_PASSWORD to run authenticated Builder smoke tests.');
 
-  test('login, open Builder, create project and verify preview controls', async ({ page }) => {
+  test('login, verify protected dashboard, open Builder and verify preview controls', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', message => {
       if (message.type() === 'error') errors.push(message.text());
@@ -17,7 +17,13 @@ test.describe('Growth Advisor Website Builder smoke', () => {
     await page.getByLabel('Email').fill(email!);
     await page.getByLabel('Password').fill(password!);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForURL('**/app/dashboard', { timeout: 30_000 });
+
+    await page.waitForURL('**/app/website-builder', { timeout: 30_000 });
+
+    // The authenticated user is now past ProtectedRoute. Verify the dashboard is also reachable.
+    await page.goto('/app/dashboard');
+    await page.waitForURL('**/app/dashboard', { timeout: 15_000 });
+    await expect(page.getByText('Growth Command Center', { exact: true })).toBeVisible();
 
     await page.goto('/app/website-builder');
     await expect(page.getByText('Growth Advisor Website Builder', { exact: true }).first()).toBeVisible();
