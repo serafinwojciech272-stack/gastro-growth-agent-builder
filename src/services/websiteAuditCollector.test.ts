@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectWebsiteAudit } from "./websiteAuditCollector";
+import { collectWebsiteAudit } from "./websiteAuditCollector.ts";
 
 const html = `<!doctype html><html lang="pl"><head><title>Restauracja Testowa</title><meta name="description" content="Opis"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="canonical" href="https://example.com/"><meta name="robots" content="index,follow"></head><body><main><h1>Menu</h1><p>Kontakt: test@example.com</p><img src="dish.jpg" alt="Danie"></main></body></html>`;
 
