@@ -4,90 +4,21 @@ import { Activity, ArrowRight, CheckCircle2, Clock3, ShieldCheck, Target, Zap } 
 import AppShell from "../components/AppShell";
 import { requireSupabase } from "../lib/supabase";
 
-type Run = {
-  id: string;
-  status: string;
-  mission_json: Record<string, unknown> | null;
-  decision_json: Record<string, unknown> | null;
-  approved_at: string | null;
-  created_at: string;
-};
-
+type Run = { id: string; status: string; mission_json: Record<string, unknown> | null; decision_json: Record<string, unknown> | null; approved_at: string | null; created_at: string };
 type Action = { id: string; title: string; status: string; priority: string; due_at: string | null };
-
 const text = (value: unknown, fallback: string) => typeof value === "string" && value.trim() ? value : fallback;
 
 export default function MissionControlPage() {
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [actions, setActions] = useState<Action[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const sb = requireSupabase();
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) return;
-      const { data: membership, error: membershipError } = await sb.from("organization_members").select("organization_id").eq("user_id", user.id).limit(1).maybeSingle();
-      if (membershipError) throw membershipError;
-      if (!membership) return;
-      const { data: restaurant, error: restaurantError } = await sb.from("restaurants").select("id,business_profile_id").eq("organization_id", membership.organization_id).limit(1).maybeSingle();
-      if (restaurantError) throw restaurantError;
-      if (!restaurant) return;
-
-      let nextRuns: Run[] = [];
-      if (restaurant.business_profile_id) {
-        const { data, error: runError } = await sb.from("growth_mission_runs").select("id,status,mission_json,decision_json,approved_at,created_at").eq("business_id", restaurant.business_profile_id).order("created_at", { ascending: false }).limit(20);
-        if (runError) throw runError;
-        nextRuns = (data ?? []) as Run[];
-      }
-      const { data: actionRows, error: actionError } = await sb.from("actions").select("id,title,status,priority,due_at").eq("restaurant_id", restaurant.id).order("created_at", { ascending: false }).limit(20);
-      if (actionError) throw actionError;
-      setRuns(nextRuns);
-      setActions((actionRows ?? []) as Action[]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Mission Control could not load.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const [runs, setRuns] = useState<Run[]>([]); const [actions, setActions] = useState<Action[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [busy, setBusy] = useState<string | null>(null);
+  const load = async () => { setLoading(true); setError(""); try { const sb = requireSupabase(); const { data: { user } } = await sb.auth.getUser(); if (!user) return; const { data: membership, error: membershipError } = await sb.from("organization_members").select("organization_id").eq("user_id", user.id).limit(1).maybeSingle(); if (membershipError) throw membershipError; if (!membership) return; const { data: restaurant, error: restaurantError } = await sb.from("restaurants").select("id,business_profile_id").eq("organization_id", membership.organization_id).limit(1).maybeSingle(); if (restaurantError) throw restaurantError; if (!restaurant) return; let nextRuns: Run[] = []; if (restaurant.business_profile_id) { const { data, error: runError } = await sb.from("growth_mission_runs").select("id,status,mission_json,decision_json,approved_at,created_at").eq("business_id", restaurant.business_profile_id).order("created_at", { ascending: false }).limit(20); if (runError) throw runError; nextRuns = (data ?? []) as Run[]; } const { data: actionRows, error: actionError } = await sb.from("actions").select("id,title,status,priority,due_at").eq("restaurant_id", restaurant.id).order("created_at", { ascending: false }).limit(20); if (actionError) throw actionError; setRuns(nextRuns); setActions((actionRows ?? []) as Action[]); } catch (e) { setError(e instanceof Error ? e.message : "Mission Control could not load."); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []);
+  const stats = useMemo(() => ({ pending: runs.filter((r) => !r.approved_at && ["awaiting_approval", "draft", "proposed"].includes(r.status)).length, active: runs.filter((r) => ["approved", "active", "executing", "measuring"].includes(r.status)).length, completed: runs.filter((r) => ["completed", "measured", "succeeded"].includes(r.status)).length, actionQueue: actions.filter((a) => ["todo", "approved", "in_progress", "executing"].includes(a.status)).length }), [runs, actions]);
+  const approve = async (id: string) => { setBusy(id); setError(""); try { const { data, error: approvalError } = await requireSupabase().functions.invoke("gga-mission-approval", { body: { mission_id: id } }); if (approvalError) throw approvalError; if (data?.error) throw new Error(String(data.error)); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Mission approval failed."); } finally { setBusy(null); } };
 
-  const stats = useMemo(() => ({
-    pending: runs.filter((r) => !r.approved_at && ["awaiting_approval", "draft", "proposed"].includes(r.status)).length,
-    active: runs.filter((r) => ["active", "executing", "measuring"].includes(r.status)).length,
-    completed: runs.filter((r) => ["completed", "measured", "succeeded"].includes(r.status)).length,
-    actionQueue: actions.filter((a) => ["todo", "approved", "in_progress", "executing"].includes(a.status)).length,
-  }), [runs, actions]);
-
-  const approve = async (id: string) => {
-    setBusy(id);
-    try {
-      const { error: updateError } = await requireSupabase().from("growth_mission_runs").update({ status: "active", approved_at: new Date().toISOString() }).eq("id", id);
-      if (updateError) throw updateError;
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Mission approval failed.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return <AppShell title="Mission Control">
-    <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
-      <div><div className="text-xs font-bold tracking-[0.2em] text-orange-300">EXECUTION CONTROL</div><h2 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Mission Control</h2><p className="mt-3 max-w-2xl text-zinc-400">The governed bridge from decision to execution. Every mission stays approval-gated, measurable and traceable.</p></div>
-      <Link to="/app/advisor" className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">Create from Advisor <ArrowRight size={16}/></Link>
-    </div>
+  return <AppShell title="Mission Control"><div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="text-xs font-bold tracking-[0.2em] text-orange-300">EXECUTION CONTROL</div><h2 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Mission Control</h2><p className="mt-3 max-w-2xl text-zinc-400">The governed bridge from decision to execution. Every mission stays approval-gated, measurable and traceable.</p></div><Link to="/app/advisor" className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">Create from Advisor <ArrowRight size={16}/></Link></div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Awaiting approval", stats.pending, ShieldCheck], ["Active missions", stats.active, Activity], ["Completed", stats.completed, CheckCircle2], ["Action queue", stats.actionQueue, Zap]].map(([label,value,Icon])=><div key={String(label)} className="rounded-2xl border border-white/10 bg-white/[.025] p-5"><div className="flex items-center justify-between text-xs uppercase tracking-wider text-zinc-500"><span>{label}</span><Icon size={16}/></div><div className="mt-3 text-3xl font-black text-white">{String(value)}</div></div>)}</div>
     {error && <div role="alert" className="mt-5 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200">{error}</div>}
-    <section className="mt-6 rounded-3xl border border-white/10 bg-white/[.025] p-5 md:p-7">
-      <div className="mb-5 flex items-center justify-between"><div><h3 className="text-xl font-semibold">Mission pipeline</h3><p className="mt-1 text-sm text-zinc-500">Decision → approval → execution → measurement.</p></div><Target className="text-orange-300" size={20}/></div>
-      {loading ? <div className="py-12 text-center text-zinc-500">Loading missions...</div> : runs.length === 0 ? <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center"><h4 className="font-semibold">No missions yet</h4><p className="mt-2 text-sm text-zinc-500">Run GA Advisor to create the first governed growth mission.</p></div> : <div className="space-y-3">{runs.map((run) => { const mission = run.mission_json ?? {}; const decision = run.decision_json ?? {}; const pending = !run.approved_at && ["awaiting_approval", "draft", "proposed"].includes(run.status); return <article key={run.id} className="rounded-2xl border border-white/10 bg-black/20 p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-orange-400/20 bg-orange-400/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-200">{run.status}</span>{run.approved_at && <span className="rounded-full border border-emerald-400/20 px-2.5 py-1 text-[10px] uppercase text-emerald-200">approved</span>}</div><h4 className="mt-3 text-lg font-semibold text-white">{text(mission.title ?? mission.name ?? decision.title, "Growth mission")}</h4><p className="mt-1 text-sm text-zinc-400">{text(mission.goal ?? mission.objective ?? decision.goal, "Measured business growth objective")}</p></div>{pending && <button disabled={busy === run.id} onClick={() => void approve(run.id)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black disabled:opacity-50"><ShieldCheck size={15}/>{busy === run.id ? "Approving..." : "Approve mission"}</button>}</div><div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-500"><span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5"><Clock3 size={12}/> {new Date(run.created_at).toLocaleString()}</span><span className="rounded-full bg-white/5 px-3 py-1.5">Governance: approval gate</span><span className="rounded-full bg-white/5 px-3 py-1.5">Measurement required</span></div></article>})}</div>}
-    </section>
+    <section className="mt-6 rounded-3xl border border-white/10 bg-white/[.025] p-5 md:p-7"><div className="mb-5 flex items-center justify-between"><div><h3 className="text-xl font-semibold">Mission pipeline</h3><p className="mt-1 text-sm text-zinc-500">Decision → approval → execution → measurement → learning.</p></div><Target className="text-orange-300" size={20}/></div>{loading ? <div className="py-12 text-center text-zinc-500">Loading missions...</div> : runs.length === 0 ? <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center"><h4 className="font-semibold">No missions yet</h4><p className="mt-2 text-sm text-zinc-500">Run GA Advisor to create the first governed growth mission.</p></div> : <div className="space-y-3">{runs.map((run) => { const mission = run.mission_json ?? {}; const decision = run.decision_json ?? {}; const pending = !run.approved_at && ["awaiting_approval", "draft", "proposed"].includes(run.status); return <article key={run.id} className="rounded-2xl border border-white/10 bg-black/20 p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-orange-400/20 bg-orange-400/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-200">{run.status}</span>{run.approved_at && <span className="rounded-full border border-emerald-400/20 px-2.5 py-1 text-[10px] uppercase text-emerald-200">approved</span>}</div><h4 className="mt-3 text-lg font-semibold text-white">{text(mission.title ?? mission.name ?? decision.title, "Growth mission")}</h4><p className="mt-1 text-sm text-zinc-400">{text(mission.goal ?? mission.objective ?? decision.goal, "Measured business growth objective")}</p></div>{pending && <button disabled={busy === run.id} onClick={() => void approve(run.id)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black disabled:opacity-50"><ShieldCheck size={15}/>{busy === run.id ? "Approving..." : "Approve mission"}</button>}</div><div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-500"><span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5"><Clock3 size={12}/> {new Date(run.created_at).toLocaleString()}</span><span className="rounded-full bg-white/5 px-3 py-1.5">Governance: approval gate</span><span className="rounded-full bg-white/5 px-3 py-1.5">Measurement required</span></div></article>})}</div>}</section>
     <div className="mt-6 grid gap-4 md:grid-cols-2"><Link to="/app/actions" className="rounded-2xl border border-white/10 bg-white/[.025] p-5 transition hover:border-orange-400/30"><div className="text-xs uppercase tracking-wider text-orange-300">Execution queue</div><div className="mt-2 font-semibold">Open Action Center →</div><p className="mt-1 text-sm text-zinc-500">Review, approve and execute bounded actions.</p></Link><Link to="/app/dashboard" className="rounded-2xl border border-white/10 bg-white/[.025] p-5 transition hover:border-violet-400/30"><div className="text-xs uppercase tracking-wider text-violet-300">Intelligence cockpit</div><div className="mt-2 font-semibold">Return to Growth Command Center →</div><p className="mt-1 text-sm text-zinc-500">See health, outcomes and learning in one view.</p></Link></div>
   </AppShell>;
 }
