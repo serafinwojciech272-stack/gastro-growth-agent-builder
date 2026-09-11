@@ -14,8 +14,28 @@ export type GrowthOutcome = { missionId: string; actionId?: string; status: Outc
 export type GrowthLearning = { insight: string; confidence: number; reusable: boolean; sourceOutcomeId?: string; nextRecommendation?: string };
 export type GrowthDecisionContext = { vertical: GrowthVerticalId; businessId: string; objective: string; kpis: GrowthKpi[]; recentOutcomes?: GrowthOutcome[] };
 export type ActionPolicy = { risk: ActionRisk; autonomyLevel: AutonomyLevel; requiresApproval: boolean; maxFrequencyPerDay?: number; maxBudget?: number; allowedIntegrations?: readonly string[] };
+export type ExecutionSnapshot = { executionsToday: number; spendToday?: number; integration?: string };
+
 export function isAutonomousAction(action: GrowthAction): boolean { return action.autonomyLevel >= 3 && !action.requiresApproval; }
 export function normalizeOutcomeConfidence(confidence: number): number { if (!Number.isFinite(confidence)) return 0; return Math.max(0, Math.min(1, confidence > 1 ? confidence / 100 : confidence)); }
 export function classifyOutcome(confidence: number, delta: number | undefined): OutcomeStatus { const normalized = normalizeOutcomeConfidence(confidence); if (delta === undefined || normalized < 0.5) return "insufficient_data"; if (delta > 0) return normalized >= 0.8 ? "success" : "partial_success"; if (delta === 0) return "no_impact"; return "negative"; }
-export function comparePrediction(prediction: Prediction, outcome: GrowthMetricMeasurement): PredictionError { if (prediction.baseline !== outcome.before || outcome.after === undefined || outcome.before === undefined) throw new Error("Prediction requires matching measured before/after values."); const predictedDelta = prediction.expected - prediction.baseline; const actualDelta = outcome.after - outcome.before; return { kpi: prediction.kpi, predictedDelta, actualDelta, absoluteError: Math.abs(actualDelta - predictedDelta), signedError: actualDelta - predictedDelta, directionCorrect: predictedDelta === 0 ? actualDelta === 0 : Math.sign(predictedDelta) === Math.sign(actualDelta), confidence: normalizeOutcomeConfidence(prediction.confidence) } }
+export function comparePrediction(prediction: Prediction, outcome: GrowthMetricMeasurement): PredictionError { if (prediction.baseline !== outcome.before || outcome.after === undefined || outcome.before === undefined) throw new Error("Prediction requires matching measured before/after values."); const predictedDelta = prediction.expected - prediction.baseline; const actualDelta = outcome.after - outcome.before; return { kpi: prediction.kpi, predictedDelta, actualDelta, absoluteError: Math.abs(actualDelta - predictedDelta), signedError: actualDelta - predictedDelta, directionCorrect: predictedDelta === 0 ? actualDelta === 0 : Math.sign(predictedDelta) === Math.sign(actualDelta), confidence: normalizeOutcomeConfidence(prediction.confidence) }; }
 export function deriveLearning(outcome: GrowthOutcome): GrowthLearning { const confidence = normalizeOutcomeConfidence(outcome.confidence); const entries = Object.entries(outcome.metrics).filter(([, metric]) => metric.delta !== undefined); if (entries.length === 0 || outcome.status === "insufficient_data") return { insight: "Outcome data is insufficient to establish reusable learning.", confidence, reusable: false, sourceOutcomeId: outcome.missionId }; const positive = entries.filter(([, metric]) => (metric.delta ?? 0) > 0).length; const negative = entries.filter(([, metric]) => (metric.delta ?? 0) < 0).length; const direction = positive > negative ? "positive" : negative > positive ? "negative" : "mixed"; return { insight: `Measured outcome is ${direction} across ${entries.length} KPI(s); use the observed deltas as evidence for the next diagnosis.`, confidence, reusable: confidence >= 0.7 && outcome.status !== "negative", sourceOutcomeId: outcome.missionId, nextRecommendation: outcome.status === "success" ? "Preserve the successful pattern and test whether it generalizes." : "Re-diagnose using the measured outcome and updated business context." }; }
+
+export function validateActionPolicy(policy: ActionPolicy): string[] {
+  const errors: string[] = [];
+  if (policy.autonomyLevel >= 3 && policy.risk !== "low") errors.push("Autonomous execution is restricted to low-risk actions.");
+  if (policy.autonomyLevel >= 3 && policy.requiresApproval) errors.push("An autonomous action cannot require human approval at execution time.");
+  if (policy.maxFrequencyPerDay !== undefined && (!Number.isInteger(policy.maxFrequencyPerDay) || policy.maxFrequencyPerDay < 1)) errors.push("maxFrequencyPerDay must be a positive integer.");
+  if (policy.maxBudget !== undefined && (!Number.isFinite(policy.maxBudget) || policy.maxBudget < 0)) errors.push("maxBudget must be a non-negative number.");
+  return errors;
+}
+
+export function canExecuteWithinPolicy(policy: ActionPolicy, snapshot: ExecutionSnapshot): boolean {
+  if (validateActionPolicy(policy).length) return false;
+  if (policy.autonomyLevel < 3 || policy.requiresApproval) return false;
+  if (policy.maxFrequencyPerDay !== undefined && snapshot.executionsToday >= policy.maxFrequencyPerDay) return false;
+  if (policy.maxBudget !== undefined && (snapshot.spendToday ?? 0) > policy.maxBudget) return false;
+  if (snapshot.integration && policy.allowedIntegrations && !policy.allowedIntegrations.includes(snapshot.integration)) return false;
+  return true;
+}
