@@ -10,7 +10,6 @@ export type IntelligenceControlPlaneInput = {
   actions: readonly GrowthAction[];
   measurementKpis: readonly GrowthKpi[];
 };
-
 export type IntelligenceControlPlaneResult = {
   priorities: PriorityScore[];
   recommendations: Recommendation[];
@@ -21,17 +20,12 @@ export type IntelligenceControlPlaneResult = {
 
 export function runIntelligenceControlPlane(input: IntelligenceControlPlaneInput): IntelligenceControlPlaneResult {
   const intelligence = buildBusinessIntelligence({ context: input.context, signals: input.signals });
+  if (intelligence.traceErrors.length > 0) return { priorities: [], recommendations: [], traceErrors: intelligence.traceErrors };
   const selectedOpportunity = intelligence.priorities[0]
     ? intelligence.opportunities.find((opportunity) => opportunity.id === intelligence.priorities[0].opportunityId)
     : undefined;
   const missionPlan = selectedOpportunity
     ? buildGrowthMissionFromUniversal(input.decisionContext, selectedOpportunity, input.actions, input.measurementKpis)
     : undefined;
-  return {
-    priorities: intelligence.priorities,
-    recommendations: intelligence.recommendations,
-    selectedOpportunity,
-    missionPlan,
-    traceErrors: intelligence.traceErrors,
-  };
+  return { priorities: intelligence.priorities, recommendations: intelligence.recommendations, selectedOpportunity, missionPlan, traceErrors: [] };
 }
