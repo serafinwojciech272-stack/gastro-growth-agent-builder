@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:unit": "tsx --test src/services/websiteAuditCollector.test.ts src/domain/intelligenceContracts.test.ts src/domain/universalGrowthContracts.test.ts src/domain/modelOrchestrator.test.ts src/domain/growthHealth.test.ts src/domain/businessMemory.test.ts src/domain/industryAdapters.test.ts",
+    "test:unit": "tsx --test src/services/websiteAuditCollector.test.ts src/domain/intelligenceContracts.test.ts src/domain/universalGrowthContracts.test.ts src/domain/modelOrchestrator.test.ts src/domain/growthHealth.test.ts src/domain/businessMemory.test.ts src/domain/industryAdapters.test.ts src/domain/growthTypes.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
