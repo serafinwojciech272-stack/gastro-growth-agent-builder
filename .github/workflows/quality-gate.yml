@@ -1,4 +1,4 @@
-name: GGA Quality Gate
+name: GA Quality Gate
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: quality-${{ github.ref }}
@@ -30,10 +30,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Sync lockfile and install dependencies
-        run: |
-          npm install --package-lock-only --ignore-scripts --no-audit
-          npm install --ignore-scripts --no-audit
+      - name: Install dependencies from lockfile
+        run: npm ci --ignore-scripts --no-audit
 
       - name: TypeScript check
         run: npx tsc -b --pretty false
