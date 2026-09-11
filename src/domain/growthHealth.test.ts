@@ -8,8 +8,8 @@ test("growth health is unknown without evidence", () => {
   assert.equal(result.status, "unknown");
 });
 
-test("growth health reflects measured outcomes and execution", () => {
-  const result = calculateGrowthHealth({ activeMissions: 2, pendingApprovals: 0, openActions: 3, measuredOutcomes: 4, positiveOutcomes: 3, learningSignals: 2 });
+test("growth health is strong only with substantial measured evidence", () => {
+  const result = calculateGrowthHealth({ activeMissions: 2, pendingApprovals: 0, openActions: 3, measuredOutcomes: 5, positiveOutcomes: 5, learningSignals: 3 });
   assert.equal(result.score !== null, true);
   assert.equal(result.status, "strong");
   assert.ok(result.confidence > 0);
