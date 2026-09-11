@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:unit": "node --experimental-strip-types --test src/services/websiteAuditCollector.test.ts",
+    "test:unit": "node --experimental-strip-types --test src/services/websiteAuditCollector.test.ts src/domain/intelligenceContracts.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
