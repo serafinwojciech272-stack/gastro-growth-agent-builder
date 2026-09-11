@@ -1,17 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import type { BusinessContext } from "../../src/domain/universalBusinessCore";
-import { runUniversalGrowthIntelligenceCycle } from "../../src/domain/universalGrowthIntelligencePipeline";
-import { websiteAuditToSignalProducer } from "../../src/domain/websiteAuditIntelligence";
-import { collectWebsiteAudit } from "../../src/services/websiteAuditCollector";
+import { runWebsiteAuditPipeline } from "../../src/services/websiteAuditPipeline";
 
 type RequestWithBody = IncomingMessage & { body?: unknown };
 
 type Body = {
   business?: BusinessContext;
-  growthContext?: Parameters<typeof runUniversalGrowthIntelligenceCycle>[0]["growthContext"];
-  actions?: Parameters<typeof runUniversalGrowthIntelligenceCycle>[0]["actions"];
-  measurementKpis?: Parameters<typeof runUniversalGrowthIntelligenceCycle>[0]["measurementKpis"];
+  growthContext?: Parameters<typeof runWebsiteAuditPipeline>[0]["growthContext"];
+  actions?: Parameters<typeof runWebsiteAuditPipeline>[0]["actions"];
+  measurementKpis?: Parameters<typeof runWebsiteAuditPipeline>[0]["measurementKpis"];
 };
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -24,9 +22,10 @@ async function readBody(req: RequestWithBody): Promise<Body> {
   if (req.body && typeof req.body === "object") return req.body as Body;
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
-  if (Buffer.concat(chunks).byteLength > 50_000) throw new Error("Request body is too large.");
-  if (!chunks.length) return {};
-  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const buffer = Buffer.concat(chunks);
+  if (buffer.byteLength > 50_000) throw new Error("Request body is too large.");
+  if (!buffer.length) return {};
+  const parsed: unknown = JSON.parse(buffer.toString("utf8"));
   return parsed && typeof parsed === "object" ? parsed as Body : {};
 }
 
@@ -59,29 +58,17 @@ export default async function handler(req: RequestWithBody, res: ServerResponse)
     }
 
     const body = await readBody(req);
-    const business = body.business;
-    const url = business?.business.websiteUrl;
-    if (!business?.business.id || !url) {
+    if (!body.business?.business.id || !body.business.business.websiteUrl) {
       sendJson(res, 400, { error: "business.id and business.websiteUrl are required." });
       return;
     }
 
-    const audit = await collectWebsiteAudit(url);
-    const producerResult = websiteAuditToSignalProducer(business, audit);
-
-    const cycle = runUniversalGrowthIntelligenceCycle({
-      business,
-      sources: { website: audit },
-      growthContext: body.growthContext,
-      actions: body.actions,
-      measurementKpis: body.measurementKpis,
-    });
-
+    const result = await runWebsiteAuditPipeline(body);
     sendJson(res, 200, {
-      audit,
-      producer: producerResult,
-      intelligence: cycle,
-      approvalReady: cycle.readyForApproval,
+      audit: result.audit,
+      producer: result.producer,
+      intelligence: result.intelligence,
+      approvalReady: result.intelligence.readyForApproval,
     });
   } catch (error) {
     sendJson(res, 400, { error: error instanceof Error ? error.message : "Website intelligence pipeline failed." });
