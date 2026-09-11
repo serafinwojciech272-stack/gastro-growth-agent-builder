@@ -47,7 +47,7 @@ test("control plane produces approval-gated mission plan", () => {
 test("measurement derives learning from outcome", () => {
   const result = measureGrowthOutcome({ missionId: "mission-1", measuredAt: "2026-01-03T00:00:00Z", confidence: 0.9, metrics: { conversion: { baseline: 3, before: 2.1, after: 3.4 } } });
   assert.equal(result.outcome.status, "success");
-  assert.equal(result.outcome.metrics.conversion.delta, 1.3);
+  assert.ok(Math.abs((result.outcome.metrics.conversion.delta ?? Number.NaN) - 1.3) < Number.EPSILON * 8);
   assert.equal(result.learning.reusable, true);
 });
 
