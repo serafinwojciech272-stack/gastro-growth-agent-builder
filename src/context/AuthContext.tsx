@@ -39,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     if (!supabase) return { error: new Error("Supabase not configured"), session: null };
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) setSession(data.session);
     return { error: error as Error | null, session: data.session };
   };
 
