@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import type { BusinessContext } from "../../src/domain/universalBusinessCore";
+import { toBusinessEvidenceRow, toBusinessSignalRow } from "../../src/domain/businessKnowledgeGraphPersistence";
+import { persistBusinessIntelligenceArtifacts } from "../../src/domain/businessIntelligencePersistence";
 import { runWebsiteAuditPipeline } from "../../src/services/websiteAuditPipeline";
 
 type RequestWithBody = IncomingMessage & { body?: unknown };
@@ -29,11 +31,39 @@ async function readBody(req: RequestWithBody): Promise<Body> {
   return parsed && typeof parsed === "object" ? parsed as Body : {};
 }
 
-function supabaseServerClient() {
+function supabaseServerClient(token: string) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase server configuration is missing.");
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+}
+
+async function persistRun(token: string, business: BusinessContext, result: Awaited<ReturnType<typeof runWebsiteAuditPipeline>>): Promise<void> {
+  const client = supabaseServerClient(token);
+  const signals = result.producer.signals.filter((signal) => signal.businessId === business.business.id);
+  const evidence = result.producer.evidence.filter((item) => item.businessId === business.business.id);
+
+  if (signals.length) {
+    const { error } = await client.from("business_signals").upsert(signals.map(toBusinessSignalRow), { onConflict: "id" });
+    if (error) throw new Error(`Signal persistence failed: ${error.message}`);
+  }
+  if (evidence.length) {
+    const { error } = await client.from("business_evidence").upsert(evidence.map(toBusinessEvidenceRow), { onConflict: "id" });
+    if (error) throw new Error(`Evidence persistence failed: ${error.message}`);
+  }
+
+  await persistBusinessIntelligenceArtifacts(client, {
+    diagnoses: result.intelligence.diagnoses.filter((item) => item.businessId === business.business.id),
+    opportunities: result.intelligence.opportunities.filter((item) => item.businessId === business.business.id),
+    recommendations: result.intelligence.recommendations.filter((item) => item.businessId === business.business.id),
+    priorities: result.intelligence.priorities.filter((item) => {
+      const opportunity = result.intelligence.opportunities.find((candidate) => candidate.id === item.opportunityId);
+      return opportunity?.businessId === business.business.id;
+    }),
+  });
 }
 
 export default async function handler(req: RequestWithBody, res: ServerResponse): Promise<void> {
@@ -51,7 +81,8 @@ export default async function handler(req: RequestWithBody, res: ServerResponse)
 
   try {
     const token = authorization.slice("Bearer ".length).trim();
-    const { data, error } = await supabaseServerClient().auth.getUser(token);
+    const client = supabaseServerClient(token);
+    const { data, error } = await client.auth.getUser(token);
     if (error || !data.user) {
       sendJson(res, 401, { error: "Invalid authentication token." });
       return;
@@ -64,11 +95,13 @@ export default async function handler(req: RequestWithBody, res: ServerResponse)
     }
 
     const result = await runWebsiteAuditPipeline(body);
+    await persistRun(token, body.business, result);
     sendJson(res, 200, {
       audit: result.audit,
       producer: result.producer,
       intelligence: result.intelligence,
       approvalReady: result.intelligence.readyForApproval,
+      persisted: true,
     });
   } catch (error) {
     sendJson(res, 400, { error: error instanceof Error ? error.message : "Website intelligence pipeline failed." });
