@@ -12,8 +12,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-async function readBody(req: IncomingMessage): Promise<AuditRequestBody> {
-  if (req.body && typeof req.body === "object") return req.body as AuditRequestBody;
+async function readBody(req: RequestWithBody): Promise<AuditRequestBody> {
+  if (req.body && typeof req.body === "object") return req.body;
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   if (!chunks.length) return {};
