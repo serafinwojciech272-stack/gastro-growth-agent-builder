@@ -14,7 +14,7 @@ test("industry adapters cover the universal vertical set", () => {
   for (const id of expected) assert.ok(ids.has(id));
   assert.equal(getIndustryAdapter("restaurant").id, "restaurant");
   assert.equal(getIndustryAdapter("saas").id, "saas");
-  assert.equal(getIndustryAdapter("unknown").id, "generic_business");
+  assert.equal(getIndustryAdapter("unknown" as Parameters<typeof getIndustryAdapter>[0]).id, "generic_business");
 });
 
 test("adapter metrics preserve north-star and guardrail roles", () => {
