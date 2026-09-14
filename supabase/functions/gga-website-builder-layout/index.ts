@@ -6,6 +6,7 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 type Stage = 'AI Layout Generation' | 'Component Generation' | 'Responsive Renderer';
 type Project = { id:string; user_id:string; artifacts:Record<string,unknown>; version:number; active_stage:number; completed_stages:number[]; };
 const STAGES: Stage[] = ['AI Layout Generation','Component Generation','Responsive Renderer'];
+const STAGE_INDEX: Record<Stage, number> = { 'AI Layout Generation': 5, 'Component Generation': 6, 'Responsive Renderer': 7 };
 const COMPONENTS = ['SiteHeader','Hero','Proof','FeatureGrid','Offer','Media','Timeline','Faq','Venue','About','Testimonials','Contact','Cta','Footer','Gallery','Stats'] as const;
 
 Deno.serve(async (req) => {
@@ -14,7 +15,7 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({error:'Method not allowed'},405,cors);
   try {
     const authorization=req.headers.get('Authorization');
-    if (!authorization?.startsWith('Bearer ')) return json({error:'Authentication required'},401,cors);
+    if(!authorization?.startsWith('Bearer ')) return json({error:'Authentication required'},401,cors);
     const url=Deno.env.get('SUPABASE_URL'), key=Deno.env.get('SUPABASE_ANON_KEY');
     if(!url||!key) throw new Error('Supabase environment is incomplete');
     const sb=createClient(url,key,{global:{headers:{Authorization:authorization}}});
@@ -29,8 +30,12 @@ Deno.serve(async (req) => {
     const found=await sb.from('website_builder_projects').select('*').eq('id',projectId).eq('user_id',user.id).single();
     if(found.error) throw found.error;
     const project=found.data as Project;
+    const requiredPrevious = STAGES.slice(0, STAGES.indexOf(stage));
+    for (const previous of requiredPrevious) {
+      if (!(project.artifacts?.[previous])) return json({error:`${previous} must be completed first.`},409,cors);
+    }
     const result=await run(stage,project);
-    const index=8+STAGES.indexOf(stage);
+    const index=STAGE_INDEX[stage];
     const artifacts={...project.artifacts,[stage]:result.artifact};
     const completed=Array.from(new Set([...(project.completed_stages??[]),index])).sort((a,b)=>a-b);
     const updated=await sb.from('website_builder_projects').update({artifacts,active_stage:Math.min(index+1,10),completed_stages:completed,status:'ready',version:project.version+1}).eq('id',project.id).eq('user_id',user.id).select('*').single();
@@ -69,7 +74,8 @@ async function run(stage:Stage,p:Project){
     });
     const artifact={schemaVersion:'1.0',type:'component-manifest',registryVersion:'1.0',allowedComponents:[...COMPONENTS],pages:componentPages};
     const q=evaluateStructuredOutput(artifact,{required:['schemaVersion','type','registryVersion','allowedComponents','pages'],arrays:['allowedComponents','pages'],minItems:{allowedComponents:5,pages:1}});
-    return {artifact,quality:{score:q.score,gate:q.score>=90?'PASS':'PASS_WITH_WARNINGS'}};
+    if(q.score<90) throw new Error(`Component Generation quality gate failed: ${q.score}`);
+    return {artifact,quality:{score:q.score,gate:'PASS'}};
   }
   const manifest=p.artifacts['Component Generation'];
   if(!manifest) throw new Error('Component Generation must exist first');
