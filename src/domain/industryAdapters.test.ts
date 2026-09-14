@@ -1,12 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getIndustryAdapter, listIndustryAdapters } from "./industryAdapters";
-import type { GrowthVerticalId } from "../config/verticals";
 
 test("industry adapters cover the universal vertical set", () => {
   const adapters = listIndustryAdapters();
-  const ids = new Set(adapters.map((adapter) => adapter.id));
-  const expected: GrowthVerticalId[] = [
+  const ids = new Set<string>(adapters.map((adapter) => adapter.id));
+  const expected = [
     "restaurant", "beauty", "barber", "hairdresser", "fitness", "hotel", "home_services", "construction",
     "property_management", "dental", "ecommerce", "saas", "professional_services", "local_services", "retail",
     "health_wellness", "generic_business",
@@ -15,7 +14,7 @@ test("industry adapters cover the universal vertical set", () => {
   for (const id of expected) assert.ok(ids.has(id));
   assert.equal(getIndustryAdapter("restaurant").id, "restaurant");
   assert.equal(getIndustryAdapter("saas").id, "saas");
-  assert.equal(getIndustryAdapter("unknown" as Parameters<typeof getIndustryAdapter>[0]).id, "generic_business");
+  assert.equal(getIndustryAdapter("unknown").id, "generic_business");
 });
 
 test("adapter metrics preserve north-star and guardrail roles", () => {
