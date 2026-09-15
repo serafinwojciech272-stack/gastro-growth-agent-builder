@@ -16,12 +16,13 @@ The Core exposes:
 - provenance and evidence lineage
 - trace validation and chronological replay primitives
 - governed autonomy policy evaluation with explicit allow / approval / block decisions
+- a narrow tool/action permission boundary with fail-closed unknown-tool handling
 
 ## Canonical architecture
 
-`Context → Signal → Evidence → Diagnosis → Opportunity → Recommendation → Priority → Mission Intent → Policy / Approval → existing Execution Control Plane → Measurement → Outcome → Learning`
+`Context → Signal → Evidence → Diagnosis → Opportunity → Recommendation → Priority → Mission Intent → Policy / Approval → Tool Permission → existing Execution Control Plane → Measurement → Outcome → Learning`
 
-There is deliberately no second mission state machine and no execution side effect in the Core policy layer.
+There is deliberately no second mission state machine and no execution side effect in the Core policy or permission layers.
 
 ## Governance rules
 
@@ -33,6 +34,8 @@ The Core policy layer is deterministic and versioned. It evaluates:
 - external side effects
 - tool allow/block policy
 - approval requirements
+
+The tool permission boundary resolves a registered capability before policy evaluation. Unknown tools fail closed. Runtime credentials, tenant authorization and integration-specific checks remain responsibilities of the execution adapter.
 
 Policy evaluation returns a decision and provenance. It does not execute tools, mutate external systems or bypass the existing approval/control plane.
 
@@ -58,7 +61,7 @@ Before creating a standalone Core repository:
 
 1. make decision traces replayable without relying on UI state;
 2. isolate policy/autonomy evaluation behind Core contracts;
-3. define a narrow tool/action permission interface;
+3. define and test a narrow tool/action permission interface;
 4. prove outcome/learning compatibility;
 5. add fixture-based evaluation datasets;
 6. run the full repository quality gate successfully;
