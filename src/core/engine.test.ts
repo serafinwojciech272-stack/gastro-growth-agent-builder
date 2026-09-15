@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCoreEngine } from "./engine";
 import { missionIntentFromGrowthMission } from "./missionAdapter";
+import { recordCoreOutcome, toCoreLearning } from "./outcome";
 import { scoreOpportunity, type BusinessContext, type Opportunity, DEFAULT_PRIORITY_POLICY } from "./contracts";
 import type { GrowthMission } from "../domain/growthTypes";
 
@@ -112,4 +113,32 @@ test("Mission adapter maps into Core intent without introducing a second state m
   assert.deepEqual(intent.kpis, ["conversion_rate"]);
   assert.equal(intent.risk, "medium");
   assert.equal(intent.requiresApproval, true);
+});
+
+test("Core outcome adapter preserves insufficient-data semantics and derives reusable learning", () => {
+  const mission: GrowthMission = {
+    id: "mission-2",
+    businessId: "business-1",
+    vertical: "generic_business",
+    objective: "Test outcome",
+    actions: [],
+    measurementKpis: [{ key: "revenue", label: "Revenue", unit: "currency" }],
+    status: "measuring",
+  };
+
+  const outcome = recordCoreOutcome({
+    mission,
+    confidence: 0.9,
+    metrics: { revenue: { before: 100, after: 120, delta: 20 } },
+    evidence: ["evidence-1"],
+  });
+  const learning = toCoreLearning({
+    ...outcome,
+    learning: undefined,
+  });
+
+  assert.equal(outcome.status, "success");
+  assert.equal(outcome.evidenceIds[0], "evidence-1");
+  assert.equal(learning.sourceOutcomeId, "mission-2");
+  assert.equal(learning.reusable, true);
 });
