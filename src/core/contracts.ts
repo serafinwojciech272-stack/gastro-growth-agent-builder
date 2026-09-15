@@ -93,6 +93,25 @@ export type MissionIntent = {
   createdAt: IsoDateTime;
 };
 
+export type CoreOutcomeStatus = "success" | "partial_success" | "no_impact" | "negative" | "insufficient_data";
+
+export type CoreOutcome = {
+  missionId: string;
+  status: CoreOutcomeStatus;
+  measuredAt: IsoDateTime;
+  metrics: Record<string, { before?: number; after?: number; delta?: number; target?: number }>;
+  evidenceIds: string[];
+  confidence: number;
+};
+
+export type CoreLearning = {
+  sourceOutcomeId: string;
+  insight: string;
+  confidence: number;
+  reusable: boolean;
+  nextRecommendation?: string;
+};
+
 export type CoreRun = {
   id: string;
   businessId: string;
