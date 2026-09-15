@@ -1,0 +1,88 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { runCoreEngine } from "./engine";
+import { scoreOpportunity, type BusinessContext, type Opportunity, DEFAULT_PRIORITY_POLICY } from "./contracts";
+
+test("Core Engine produces an evidence-backed reasoning trace", () => {
+  const context: BusinessContext = {
+    business: {
+      id: "business-1",
+      organizationId: "org-1",
+      name: "Demo Business",
+      industry: "restaurant",
+      businessModel: "b2c",
+      locations: [],
+      products: [],
+      services: [],
+      customerSegments: [],
+      competitors: [],
+      goals: [],
+      constraints: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    entities: [],
+    relationships: [],
+    activeGoals: [],
+    activeConstraints: [],
+    lastUpdatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  const result = runCoreEngine({
+    context,
+    signals: [
+      {
+        id: "signal-1",
+        businessId: "business-1",
+        type: "metric_change",
+        source: "test",
+        metric: "conversion_rate",
+        value: 8,
+        baseline: 10,
+        deviation: -20,
+        direction: "negative",
+        confidence: 0.9,
+        context: {},
+        observedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.equal(result.run.status, "completed");
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.diagnoses.length, 1);
+  assert.equal(result.opportunities.length, 1);
+  assert.equal(result.recommendations.length, 1);
+  assert.equal(result.priorities.length, 1);
+  assert.deepEqual(
+    result.run.trace.map((event) => event.stage),
+    ["context", "signal", "evidence", "diagnosis", "opportunity", "recommendation", "priority"],
+  );
+});
+
+test("Core priority scoring is deterministic and records its policy version", () => {
+  const opportunity: Opportunity = {
+    id: "opportunity-1",
+    businessId: "business-1",
+    title: "Improve conversion",
+    description: "Test",
+    impact: 80,
+    urgency: 70,
+    confidence: 0.9,
+    effort: 20,
+    cost: 10,
+    risk: 10,
+    roi: 75,
+    strategicValue: 60,
+    timeToResultDays: 14,
+    dependencies: [],
+    relatedKpis: ["conversion_rate"],
+  };
+
+  const first = scoreOpportunity(opportunity, DEFAULT_PRIORITY_POLICY);
+  const second = scoreOpportunity(opportunity, DEFAULT_PRIORITY_POLICY);
+
+  assert.equal(first.score, second.score);
+  assert.equal(first.policyVersion, DEFAULT_PRIORITY_POLICY.version);
+  assert.equal(first.factors.impact, 80);
+});
