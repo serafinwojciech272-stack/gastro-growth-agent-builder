@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "node:test";
 import { evaluateToolAction, type ToolPermissionRegistry } from "./toolPolicy";
 
 const registry: ToolPermissionRegistry = {
