@@ -15,12 +15,26 @@ The Core exposes:
 - Outcome and Learning adapters
 - provenance and evidence lineage
 - trace validation and chronological replay primitives
+- governed autonomy policy evaluation with explicit allow / approval / block decisions
 
 ## Canonical architecture
 
-`Context → Signal → Evidence → Diagnosis → Opportunity → Recommendation → Priority → Mission Intent → existing Approval/Execution Control Plane → Measurement → Outcome → Learning`
+`Context → Signal → Evidence → Diagnosis → Opportunity → Recommendation → Priority → Mission Intent → Policy / Approval → existing Execution Control Plane → Measurement → Outcome → Learning`
 
-There is deliberately no second mission state machine.
+There is deliberately no second mission state machine and no execution side effect in the Core policy layer.
+
+## Governance rules
+
+The Core policy layer is deterministic and versioned. It evaluates:
+
+- autonomy level
+- action risk
+- irreversible actions
+- external side effects
+- tool allow/block policy
+- approval requirements
+
+Policy evaluation returns a decision and provenance. It does not execute tools, mutate external systems or bypass the existing approval/control plane.
 
 ## Provenance rules
 
