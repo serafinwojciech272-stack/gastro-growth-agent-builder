@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runCoreEngine } from "./engine";
+import { missionIntentFromGrowthMission } from "./missionAdapter";
 import { scoreOpportunity, type BusinessContext, type Opportunity, DEFAULT_PRIORITY_POLICY } from "./contracts";
+import type { GrowthMission } from "../domain/growthTypes";
 
 test("Core Engine produces an evidence-backed reasoning trace", () => {
   const context: BusinessContext = {
@@ -85,4 +87,29 @@ test("Core priority scoring is deterministic and records its policy version", ()
   assert.equal(first.score, second.score);
   assert.equal(first.policyVersion, DEFAULT_PRIORITY_POLICY.version);
   assert.equal(first.factors.impact, 80);
+});
+
+test("Mission adapter maps into Core intent without introducing a second state machine", () => {
+  const mission: GrowthMission = {
+    id: "mission-1",
+    businessId: "business-1",
+    vertical: "restaurant",
+    objective: "Improve conversion",
+    expectedImpact: "Increase qualified conversions",
+    actions: [
+      { id: "action-1", title: "Prepare remediation", description: "Test", risk: "medium", autonomyLevel: 1, requiresApproval: true },
+      { id: "action-2", title: "Measure outcome", description: "Test", risk: "low", autonomyLevel: 0, requiresApproval: true },
+    ],
+    measurementKpis: [{ key: "conversion_rate", label: "Conversion rate", unit: "percentage" }],
+    status: "awaiting_approval",
+  };
+
+  const intent = missionIntentFromGrowthMission(mission);
+
+  assert.equal(intent.id, mission.id);
+  assert.equal(intent.businessId, mission.businessId);
+  assert.deepEqual(intent.actions, ["Prepare remediation", "Measure outcome"]);
+  assert.deepEqual(intent.kpis, ["conversion_rate"]);
+  assert.equal(intent.risk, "medium");
+  assert.equal(intent.requiresApproval, true);
 });
