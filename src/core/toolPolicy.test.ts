@@ -1,4 +1,5 @@
-import { describe, expect, it } from "node:test";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { evaluateToolAction, type ToolPermissionRegistry } from "./toolPolicy";
 
 const registry: ToolPermissionRegistry = {
@@ -16,19 +17,19 @@ const registry: ToolPermissionRegistry = {
 describe("Core tool permission boundary", () => {
   it("allows a registered low-risk reversible tool under controlled autonomy", () => {
     const result = evaluateToolAction({ actionId: "a-1", toolId: "draft-email" }, registry);
-    expect(result.status).toBe("allowed");
-    expect(result.allowedTool).toBe(true);
+    assert.equal(result.status, "allowed");
+    assert.equal(result.allowedTool, true);
   });
 
   it("requires approval before an external side effect", () => {
     const result = evaluateToolAction({ actionId: "a-2", toolId: "send-email" }, registry);
-    expect(result.status).toBe("requires_approval");
-    expect(result.requiresApproval).toBe(true);
+    assert.equal(result.status, "requires_approval");
+    assert.equal(result.requiresApproval, true);
   });
 
   it("blocks an unregistered tool", () => {
     const result = evaluateToolAction({ actionId: "a-3", toolId: "unknown" }, registry);
-    expect(result.status).toBe("blocked");
-    expect(result.allowedTool).toBe(false);
+    assert.equal(result.status, "blocked");
+    assert.equal(result.allowedTool, false);
   });
 });
