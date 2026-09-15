@@ -25,15 +25,17 @@ export function missionIntentFromGrowthMission(mission: GrowthMission): MissionI
   return {
     id: mission.id,
     businessId: mission.businessId,
-    decisionId: mission.decisionId,
     objective: mission.objective,
     actions: mission.actions.map((action) => action.title),
-    kpis: mission.kpis,
-    expectedOutcome: mission.expectedOutcome,
-    risk: mission.risk,
+    kpis: mission.measurementKpis.map((kpi) => kpi.key),
+    expectedOutcome: mission.expectedImpact ?? mission.objective,
+    risk: mission.actions.some((action) => action.risk === "high")
+      ? "high"
+      : mission.actions.some((action) => action.risk === "medium")
+        ? "medium"
+        : "low",
     requiresApproval: mission.status === "awaiting_approval" || mission.status === "draft",
-    sourceOpportunityId: mission.opportunityId,
-    createdAt: mission.createdAt,
+    createdAt: new Date().toISOString(),
   };
 }
 
