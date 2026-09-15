@@ -41,6 +41,8 @@ export type {
   PriorityScore,
 } from "../domain/universalBusinessCore";
 
+import type { IsoDateTime } from "../domain/universalBusinessCore";
+
 export type CoreStage =
   | "context"
   | "signal"
