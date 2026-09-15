@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { GrowthMission } from "../domain/growthTypes";
 import { toCoreLearning, toCoreOutcome, recordCoreOutcome } from "./outcome";
+import { OUTCOME_EVALUATION_FIXTURES } from "./evaluationFixtures";
 
 const mission: GrowthMission = {
   id: "mission-compat-1",
@@ -73,5 +74,13 @@ describe("Core outcome compatibility", () => {
     assert.equal(learning.reusable, false);
     assert.equal(learning.confidence, 0.3);
     assert.match(learning.insight, /insufficient/);
+  });
+
+  it("keeps fixture expectations deterministic across positive, insufficient, negative and mixed outcomes", () => {
+    for (const fixture of OUTCOME_EVALUATION_FIXTURES) {
+      const learning = toCoreLearning(fixture.outcome);
+      assert.equal(learning.reusable, fixture.expected.reusable, fixture.name);
+      assert.match(learning.insight, new RegExp(fixture.expected.insightIncludes), fixture.name);
+    }
   });
 });
