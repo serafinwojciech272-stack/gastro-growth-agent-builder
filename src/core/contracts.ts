@@ -79,7 +79,8 @@ export type CoreTraceEvent = {
 export type MissionIntent = {
   id: string;
   businessId: string;
-  decisionId: string;
+  /** Optional until the canonical Growth Mission model persists the source decision id. */
+  decisionId?: string;
   objective: string;
   actions: string[];
   kpis: string[];
