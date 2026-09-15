@@ -1,10 +1,7 @@
-import {
-  buildBusinessIntelligence,
-  type IntelligencePipelineInput,
-  type IntelligencePipelineResult,
-} from "../domain/businessIntelligencePipeline";
+import type { IntelligencePipelineInput, IntelligencePipelineResult } from "../domain/businessIntelligencePipeline";
 import type { BusinessContext, BusinessSignal } from "./contracts";
 import { UNIVERSAL_CORE_CONTRACT_VERSION, type CoreRun, type CoreTraceEvent } from "./contracts";
+import { growthAdvisorReasoningProvider, type CoreReasoningProvider } from "./reasoningProvider";
 import { attachProvenance, validateTrace } from "./provenance";
 
 export type CoreEngineInput = IntelligencePipelineInput;
@@ -28,14 +25,18 @@ function traceEvent(
 
 /**
  * Reusable Core AI Engine entry point for the reasoning spine.
- * The canonical Growth Advisor intelligence pipeline remains the implementation
- * source until compatibility tests justify a standalone package extraction.
+ *
+ * The default provider is the current Growth Advisor pipeline. A caller may
+ * inject another provider without changing Core orchestration or contracts.
  */
-export function runCoreEngine(input: CoreEngineInput): CoreEngineResult {
+export function runCoreEngine(
+  input: CoreEngineInput,
+  provider: CoreReasoningProvider = growthAdvisorReasoningProvider,
+): CoreEngineResult {
   const runId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
   const scopedSignals = input.signals.filter((signal) => signal.businessId === input.context.business.id);
-  const intelligence = buildBusinessIntelligence(input);
+  const intelligence = provider(input);
   const trace: CoreTraceEvent[] = [
     attachProvenance(traceEvent(runId, "context", "context.accepted", {
       businessId: input.context.business.id,
