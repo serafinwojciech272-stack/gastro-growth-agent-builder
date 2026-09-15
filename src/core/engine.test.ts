@@ -1,28 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runCoreEngine } from "./engine";
+import { runCoreEngine, type CoreEngineInput } from "./engine";
 import { missionIntentFromGrowthMission } from "./missionAdapter";
 import { recordCoreOutcome, toCoreLearning } from "./outcome";
 import { attachProvenance, createProvenance, replayTrace, validateTrace } from "./provenance";
 import { scoreOpportunity, type BusinessContext, type Opportunity, DEFAULT_PRIORITY_POLICY } from "./contracts";
 import type { GrowthMission } from "../domain/growthTypes";
 
+const context: BusinessContext = {
+  business: {
+    id: "business-1", organizationId: "org-1", name: "Demo Business", industry: "restaurant", businessModel: "b2c",
+    locations: [], products: [], services: [], customerSegments: [], competitors: [], goals: [], constraints: [],
+    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  entities: [], relationships: [], activeGoals: [], activeConstraints: [], lastUpdatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+const input: CoreEngineInput = {
+  context,
+  signals: [{
+    id: "signal-1", businessId: "business-1", type: "metric_change", source: "test", metric: "conversion_rate",
+    value: 8, baseline: 10, deviation: -20, direction: "negative", confidence: 0.9, context: {}, observedAt: "2026-01-02T00:00:00.000Z",
+  }],
+};
+
 test("Core Engine produces an evidence-backed reasoning trace", () => {
-  const context: BusinessContext = {
-    business: {
-      id: "business-1", organizationId: "org-1", name: "Demo Business", industry: "restaurant", businessModel: "b2c",
-      locations: [], products: [], services: [], customerSegments: [], competitors: [], goals: [], constraints: [],
-      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    },
-    entities: [], relationships: [], activeGoals: [], activeConstraints: [], lastUpdatedAt: "2026-01-01T00:00:00.000Z",
-  };
-  const result = runCoreEngine({
-    context,
-    signals: [{
-      id: "signal-1", businessId: "business-1", type: "metric_change", source: "test", metric: "conversion_rate",
-      value: 8, baseline: 10, deviation: -20, direction: "negative", confidence: 0.9, context: {}, observedAt: "2026-01-02T00:00:00.000Z",
-    }],
-  });
+  const result = runCoreEngine(input);
   assert.equal(result.run.status, "completed");
   assert.equal(result.evidence.length, 1);
   assert.equal(result.diagnoses.length, 1);
@@ -30,6 +33,21 @@ test("Core Engine produces an evidence-backed reasoning trace", () => {
   assert.equal(result.recommendations.length, 1);
   assert.equal(result.priorities.length, 1);
   assert.deepEqual(result.run.trace.map((event) => event.stage), ["context", "signal", "evidence", "diagnosis", "opportunity", "recommendation", "priority"]);
+});
+
+test("Core Engine accepts an injected reasoning provider without changing orchestration", () => {
+  let calls = 0;
+  const provider = (received: CoreEngineInput) => {
+    calls += 1;
+    assert.equal(received.context.business.id, "business-1");
+    return {
+      evidence: [], diagnoses: [], opportunities: [], recommendations: [], priorities: [], traceErrors: [],
+    };
+  };
+  const result = runCoreEngine(input, provider);
+  assert.equal(calls, 1);
+  assert.equal(result.run.status, "completed");
+  assert.equal(result.run.trace[0]?.stage, "context");
 });
 
 test("Core priority scoring is deterministic and records its policy version", () => {
