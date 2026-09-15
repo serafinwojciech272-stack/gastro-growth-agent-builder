@@ -41,10 +41,15 @@ function supabaseServerClient(token: string) {
   });
 }
 
-async function persistRun(token: string, business: BusinessContext, result: Awaited<ReturnType<typeof runWebsiteAuditPipeline>>): Promise<void> {
+async function persistRun(
+  token: string,
+  business: BusinessContext,
+  result: Awaited<ReturnType<typeof runWebsiteAuditPipeline>>,
+): Promise<void> {
   const client = supabaseServerClient(token);
   const signals = result.producer.signals.filter((signal) => signal.businessId === business.business.id);
   const evidence = result.producer.evidence.filter((item) => item.businessId === business.business.id);
+  const intelligence = result.intelligence.diagnostic;
 
   if (signals.length) {
     const { error } = await client.from("business_signals").upsert(signals.map(toBusinessSignalRow), { onConflict: "id" });
@@ -56,11 +61,11 @@ async function persistRun(token: string, business: BusinessContext, result: Awai
   }
 
   await persistBusinessIntelligenceArtifacts(client, {
-    diagnoses: result.intelligence.diagnoses.filter((item) => item.businessId === business.business.id),
-    opportunities: result.intelligence.opportunities.filter((item) => item.businessId === business.business.id),
-    recommendations: result.intelligence.recommendations.filter((item) => item.businessId === business.business.id),
-    priorities: result.intelligence.priorities.filter((item) => {
-      const opportunity = result.intelligence.opportunities.find((candidate) => candidate.id === item.opportunityId);
+    diagnoses: intelligence.diagnoses.filter((item) => item.businessId === business.business.id),
+    opportunities: intelligence.opportunities.filter((item) => item.businessId === business.business.id),
+    recommendations: intelligence.recommendations.filter((item) => item.businessId === business.business.id),
+    priorities: intelligence.priorities.filter((item) => {
+      const opportunity = intelligence.opportunities.find((candidate) => candidate.id === item.opportunityId);
       return opportunity?.businessId === business.business.id;
     }),
   });
@@ -94,7 +99,14 @@ export default async function handler(req: RequestWithBody, res: ServerResponse)
       return;
     }
 
-    const result = await runWebsiteAuditPipeline(body);
+    const pipelineInput: Parameters<typeof runWebsiteAuditPipeline>[0] = {
+      business: body.business,
+      growthContext: body.growthContext,
+      actions: body.actions,
+      measurementKpis: body.measurementKpis,
+    };
+
+    const result = await runWebsiteAuditPipeline(pipelineInput);
     await persistRun(token, body.business, result);
     sendJson(res, 200, {
       audit: result.audit,
