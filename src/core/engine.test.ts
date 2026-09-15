@@ -93,7 +93,8 @@ test("Trace replay preserves deterministic chronological ordering and detects st
     { id: "2", runId: "run", stage: "evidence" as const, eventType: "evidence.built", timestamp: "2026-01-02T00:00:02.000Z", payload: {} },
     { id: "1", runId: "run", stage: "signal" as const, eventType: "signals.scoped", timestamp: "2026-01-02T00:00:01.000Z", payload: {} },
   ];
-  assert.deepEqual(replayTrace(trace).map((event) => event.id), ["1", "2"]);
-  assert.deepEqual(validateTrace(trace), []);
-  assert.ok(validateTrace([trace[0], trace[1]]).includes("stage_regression:evidence->signal"));
+  const replayed = replayTrace(trace);
+  assert.deepEqual(replayed.map((event) => event.id), ["1", "2"]);
+  assert.deepEqual(validateTrace(replayed), []);
+  assert.deepEqual(validateTrace(trace), ["non_monotonic_timestamp:1", "stage_regression:evidence->signal"]);
 });
