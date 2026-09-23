@@ -91,6 +91,17 @@ Deno.serve(async (req) => {
       if (!['Project', 'Brand Extraction', 'Content Intelligence', 'Page Architecture', 'Visual Direction'].includes(stage)) {
         return json({ error: 'Unsupported stage. The first five stages are currently server-executable.' }, 400, cors);
       }
+      const stageOrder: Stage[] = ['Project', 'Brand Extraction', 'Content Intelligence', 'Page Architecture', 'Visual Direction'];
+      const stageIndex = stageOrder.indexOf(stage);
+      if (stageIndex > 0) {
+        const previousStage = stageOrder[stageIndex - 1];
+        if (!project.artifacts?.[previousStage]) {
+          return json({ error: previousStage + ' must be completed before ' + stage + '.' }, 409, cors);
+        }
+      }
+      if (project.completed_stages?.includes(stageIndex)) {
+        return json({ project, stage, artifact: project.artifacts?.[stage], quality: { score: 100, gate: 'PASS', idempotent: true } }, 200, cors);
+      }
 
       await sb.from('website_builder_projects').update({ status: 'running' }).eq('id', project.id);
       const result = await runStage(stage, project);
