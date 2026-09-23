@@ -12,8 +12,9 @@ type Item = Record<string, unknown>;
 
 const MAX_ITEMS = 6;
 
-export function SchemaRenderer({ nodes, content, accent }: RendererProps) {
-  const requestedAccent = accent ?? '#7C3AED';
+export function SchemaRenderer(props: RendererProps) {
+  const { nodes, content } = props;
+  const requestedAccent = props.accent ?? '#7C3AED';
   const safeAccent = isCssColor(requestedAccent) ? requestedAccent : '#7C3AED';
 
   return (
