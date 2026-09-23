@@ -12,8 +12,9 @@ type Item = Record<string, unknown>;
 
 const MAX_ITEMS = 6;
 
-export function SchemaRenderer({ nodes, content, accent = '#7C3AED' }: RendererProps) {
-  const safeAccent = isCssColor(accent) ? accent : '#7C3AED';
+export function SchemaRenderer({ nodes, content, accent }: RendererProps) {
+  const requestedAccent = accent ?? '#7C3AED';
+  const safeAccent = isCssColor(requestedAccent) ? requestedAccent : '#7C3AED';
 
   return (
     <div className="min-h-full bg-white text-zinc-950 antialiased">
