@@ -32,8 +32,7 @@ Deno.serve(async (req) => {
     if (userError || !user) return json({ error: 'Invalid session' }, 401, corsHeaders);
 
     const body = await req.json().catch(() => null);
-    const problem = typeof body?.problem === 'string' ? body.problem.trim() : '';\n    const source = typeof body?.source === 'string' ? body.source : 'direct';\n    const sourceProjectId = typeof body?.source_project_id === 'string' ? body.source_project_id : null;
-    if (problem.length < 8 || problem.length > 4000) return json({ error: 'Problem must contain 8-4000 characters.' }, 400, corsHeaders);
+    const problem = typeof body?.problem === 'string' ? body.problem.trim() : '';\n    const source = typeof body?.source === 'string' ? body.source : 'direct';\n    const sourceProjectId = typeof body?.source_project_id === 'string' ? body.source_project_id : null;\n    const websiteContext = body?.website_context && typeof body.website_context === 'object' ? body.website_context : null;\n    if (problem.length < 8 || problem.length > 4000) return json({ error: 'Problem must contain 8-4000 characters.' }, 400, corsHeaders);
 
     const { data: memberships, error: membershipError } = await userClient.from('organization_members').select('organization_id').eq('user_id', user.id).limit(1);
     if (membershipError) throw membershipError;
@@ -45,14 +44,14 @@ Deno.serve(async (req) => {
     if (!restaurant) return json({ error: 'Complete business onboarding first.' }, 404, corsHeaders);
     if (!restaurant.business_profile_id) return json({ error: 'Business profile is not initialized. Complete onboarding before creating a mission.' }, 409, corsHeaders);
 
-    const task: AiTask = 'advisor';
+    if (sourceProjectId) {\n      const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,diagnosis_json,decision_json,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();\n      if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);\n    }\n\n    const task: AiTask = 'advisor';
     const modelChoice = await selectModel(task, []);
     const ai = await callOpenRouter({
       task,
       selectedModel: modelChoice.model,
       temperature: 0.15,
       system: `You are GA's governed growth strategist. Analyze the business problem and produce one coherent growth plan. Never invent business metrics. Missing numeric baselines or targets must be null. Separate facts from assumptions in the diagnosis. Prefer measurable goals and low-risk actions. Return JSON only with diagnosis, root_causes, mission and actions. diagnosis max 700 chars; root_causes 2-5; actions 2-5. mission priority 0-100. Every action requires title, description, action_type, impact_score 0-100, effort_score 0-100, risk_level low|medium|high.`,
-      user: JSON.stringify({ business: restaurant, problem }),
+      user: JSON.stringify({ business: restaurant, problem, source, source_project_id: sourceProjectId, website_context: websiteContext }),
     });
 
     const plan = normalizePlan(parseJson(ai.content));
@@ -62,15 +61,14 @@ Deno.serve(async (req) => {
     const { data: analysis, error: analysisError } = await adminClient.from('ai_analyses').insert({ restaurant_id: restaurant.id, user_id: user.id, problem, diagnosis: plan.diagnosis, root_causes: plan.root_causes, recommendations: plan.actions, priority: priorityFromNumber(plan.mission.priority) }).select('id,created_at').single();
     if (analysisError) throw analysisError;
 
-    if (sourceProjectId) {\n      const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();\n      if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);\n    }\n\n    const missionId = crypto.randomUUID();
+    const missionId = crypto.randomUUID();
     const decision = {
       decision_type: 'growth_mission_proposal',
       selected_opportunity: plan.mission.title,
       rationale: plan.diagnosis,
       confidence: quality.score,
       requires_approval: true,
-      source_analysis_id: analysis.id,
-    };
+      source_analysis_id: analysis.id,\n      source,\n      source_project_id: sourceProjectId,\n    };
     const missionJson = {
       title: plan.mission.title,
       goal: plan.mission.goal,
@@ -79,16 +77,12 @@ Deno.serve(async (req) => {
       baseline_value: plan.mission.baseline_value,
       unit: plan.mission.unit,
       actions: plan.actions.map((action) => ({ title: action.title, action_type: action.action_type })),
-      expected_outcome: plan.mission.goal,
-    };
+      expected_outcome: plan.mission.goal,\n      source,\n      source_project_id: sourceProjectId,\n    };
     const diagnosisJson = {
       problem,
       diagnosis: plan.diagnosis,
       root_causes: plan.root_causes,
-      evidence: [{ type: 'human_input', observation: problem, epistemic_status: 'fact' }],
-      quality_score: quality.score,
-      model: ai.model,
-    };
+      evidence: [{ type: 'human_input', observation: problem, epistemic_status: 'fact' }, ...(websiteContext ? [{ type: 'website_builder', observation: websiteContext, epistemic_status: 'derived_context' }] : [])],\n      quality_score: quality.score,\n      model: ai.model,\n      source,\n      source_project_id: sourceProjectId,\n    };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
       id: missionId,
