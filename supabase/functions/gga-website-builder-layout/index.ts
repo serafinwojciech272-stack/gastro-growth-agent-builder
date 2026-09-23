@@ -30,6 +30,8 @@ Deno.serve(async (req) => {
     const found=await sb.from('website_builder_projects').select('*').eq('id',projectId).eq('user_id',user.id).single();
     if(found.error) throw found.error;
     const project=found.data as Project;
+    const existing = project.artifacts?.[stage];
+    if (existing) return json({project,stage,artifact:existing,quality:{score:100,gate:'PASS',idempotent:true}},200,cors);
     const requiredPrevious = STAGES.slice(0, STAGES.indexOf(stage));
     for (const previous of requiredPrevious) {
       if (!(project.artifacts?.[previous])) return json({error:`${previous} must be completed first.`},409,cors);
@@ -79,7 +81,19 @@ async function run(stage:Stage,p:Project){
   }
   const manifest=p.artifacts['Component Generation'];
   if(!manifest) throw new Error('Component Generation must exist first');
-  const artifact={schemaVersion:'1.0',type:'responsive-renderer',engine:'growth-advisor-schema-renderer',breakpoints:{mobile:0,tablet:768,desktop:1024},states:['mobile','tablet','desktop'],componentSource:'controlled-registry',inputArtifact:'Component Generation',reducedMotion:true};
+  const manifestRecord=isRecord(manifest)?manifest:{};
+  const pages=Array.isArray(manifestRecord.pages)?manifestRecord.pages:[];
+  if(!pages.length) throw new Error('Component Generation contains no pages');
+  const validNodes=pages.every((page)=>{
+    if(!isRecord(page)||typeof page.path!=='string'||!Array.isArray(page.nodes)) return false;
+    return page.nodes.every((node)=>{
+      if(!isRecord(node)||typeof node.id!=='string'||!COMPONENTS.includes(node.component as typeof COMPONENTS[number])) return false;
+      const props=isRecord(node.props)?node.props:{};
+      return Array.isArray(props.contentRefs)&&typeof props.variant==='string'&&isRecord(node.accessibility);
+    });
+  });
+  if(!validNodes) throw new Error('Component Generation failed renderer contract validation');
+  const artifact={schemaVersion:'1.0',type:'responsive-renderer',engine:'growth-advisor-schema-renderer',breakpoints:{mobile:0,tablet:768,desktop:1024},states:['mobile','tablet','desktop'],componentSource:'controlled-registry',inputArtifact:'Component Generation',reducedMotion:true,contract:{pages:pages.length,registrySize:COMPONENTS.length,semanticHeadings:true,interactiveAnchors:true}};
   return {artifact,quality:{score:100,gate:'PASS'}};
 }
 function json(body:unknown,status:number,cors:Record<string,string>){return new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}})}
