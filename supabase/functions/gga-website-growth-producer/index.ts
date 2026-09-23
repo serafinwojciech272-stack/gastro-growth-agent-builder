@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getCorsHeaders } from '../_shared/cors.ts';
+function getCorsHeaders(req: Request) { const origin = req.headers.get('Origin') || ''; const allowed = ['https://gastrogrowthadvisor.com', 'https://gastro-growth-agent-builder.vercel.app']; return { 'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : 'https://gastrogrowthadvisor.com', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Vary': 'Origin' }; }
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
