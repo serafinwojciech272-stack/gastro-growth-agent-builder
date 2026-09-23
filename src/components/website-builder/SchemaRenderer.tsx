@@ -16,7 +16,7 @@ export function SchemaRenderer({ nodes, content, accent = '#7C3AED' }: RendererP
   const safeAccent = isCssColor(accent) ? accent : '#7C3AED';
 
   return (
-    <div className="min-h-full bg-white text-zinc-950 antialiased" style={{ '--builder-accent': safeAccent } as React.CSSProperties}>
+    <div className="min-h-full bg-white text-zinc-950 antialiased">
       {nodes.map((node) => (
         <SchemaBlock key={node.id} node={node} content={content} accent={safeAccent} />
       ))}
@@ -201,7 +201,7 @@ function stringValue(value: unknown, fallback: string) { return typeof value ===
 function isItem(value: unknown): value is Item { return Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
 function dedupeItems(items: Item[]) {
   const seen = new Set<string>();
-  return items.filter((item) => { const key = String(item.id ?? item.key ?? item.slug ?? item.title ?? item.text ?? Math.random()); if (seen.has(key)) return false; seen.add(key); return true; });
+  return items.filter((item) => { const key = String(item.id ?? item.key ?? item.slug ?? item.title ?? item.text ?? JSON.stringify(item)); if (seen.has(key)) return false; seen.add(key); return true; });
 }
 function safeId(value: string) { return value.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80) || 'section'; }
-function isCssColor(value: string) { return /^#[0-9a-fA-F]{3,8}$/.test(value) || /^(rgb|hsl)a?\\(/.test(value); }
+function isCssColor(value: string) { return /^#[0-9a-fA-F]{3,8}$/.test(value) || /^(rgb|hsl)a?\(/.test(value); }
