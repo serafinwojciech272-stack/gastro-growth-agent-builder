@@ -32,7 +32,11 @@ Deno.serve(async (req) => {
     if (userError || !user) return json({ error: 'Invalid session' }, 401, corsHeaders);
 
     const body = await req.json().catch(() => null);
-    const problem = typeof body?.problem === 'string' ? body.problem.trim() : '';\n    const source = typeof body?.source === 'string' ? body.source : 'direct';\n    const sourceProjectId = typeof body?.source_project_id === 'string' ? body.source_project_id : null;\n    const websiteContext = body?.website_context && typeof body.website_context === 'object' ? body.website_context : null;\n    if (problem.length < 8 || problem.length > 4000) return json({ error: 'Problem must contain 8-4000 characters.' }, 400, corsHeaders);
+    const problem = typeof body?.problem === 'string' ? body.problem.trim() : '';
+    const source = typeof body?.source === 'string' ? body.source : 'direct';
+    const sourceProjectId = typeof body?.source_project_id === 'string' ? body.source_project_id : null;
+    const websiteContext = body?.website_context && typeof body.website_context === 'object' ? body.website_context : null;
+    if (problem.length < 8 || problem.length > 4000) return json({ error: 'Problem must contain 8-4000 characters.' }, 400, corsHeaders);
 
     const { data: memberships, error: membershipError } = await userClient.from('organization_members').select('organization_id').eq('user_id', user.id).limit(1);
     if (membershipError) throw membershipError;
@@ -44,7 +48,12 @@ Deno.serve(async (req) => {
     if (!restaurant) return json({ error: 'Complete business onboarding first.' }, 404, corsHeaders);
     if (!restaurant.business_profile_id) return json({ error: 'Business profile is not initialized. Complete onboarding before creating a mission.' }, 409, corsHeaders);
 
-    if (sourceProjectId) {\n      const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,diagnosis_json,decision_json,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();\n      if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);\n    }\n\n    const task: AiTask = 'advisor';
+    if (sourceProjectId) {
+      const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,diagnosis_json,decision_json,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);
+    }
+
+    const task: AiTask = 'advisor';
     const modelChoice = await selectModel(task, []);
     const ai = await callOpenRouter({
       task,
@@ -68,7 +77,10 @@ Deno.serve(async (req) => {
       rationale: plan.diagnosis,
       confidence: quality.score,
       requires_approval: true,
-      source_analysis_id: analysis.id,\n      source,\n      source_project_id: sourceProjectId,\n    };
+      source_analysis_id: analysis.id,
+      source,
+      source_project_id: sourceProjectId,
+    };
     const missionJson = {
       title: plan.mission.title,
       goal: plan.mission.goal,
@@ -77,12 +89,20 @@ Deno.serve(async (req) => {
       baseline_value: plan.mission.baseline_value,
       unit: plan.mission.unit,
       actions: plan.actions.map((action) => ({ title: action.title, action_type: action.action_type })),
-      expected_outcome: plan.mission.goal,\n      source,\n      source_project_id: sourceProjectId,\n    };
+      expected_outcome: plan.mission.goal,
+      source,
+      source_project_id: sourceProjectId,
+    };
     const diagnosisJson = {
       problem,
       diagnosis: plan.diagnosis,
       root_causes: plan.root_causes,
-      evidence: [{ type: 'human_input', observation: problem, epistemic_status: 'fact' }, ...(websiteContext ? [{ type: 'website_builder', observation: websiteContext, epistemic_status: 'derived_context' }] : [])],\n      quality_score: quality.score,\n      model: ai.model,\n      source,\n      source_project_id: sourceProjectId,\n    };
+      evidence: [{ type: 'human_input', observation: problem, epistemic_status: 'fact' }, ...(websiteContext ? [{ type: 'website_builder', observation: websiteContext, epistemic_status: 'derived_context' }] : [])],
+      quality_score: quality.score,
+      model: ai.model,
+      source,
+      source_project_id: sourceProjectId,
+    };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
       id: missionId,
