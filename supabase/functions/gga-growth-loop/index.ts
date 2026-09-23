@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     if (userError || !user) return json({ error: 'Invalid session' }, 401, corsHeaders);
 
     const body = await req.json().catch(() => null);
-    const problem = typeof body?.problem === 'string' ? body.problem.trim() : '';
+    const problem = typeof body?.problem === 'string' ? body.problem.trim() : '';\n    const source = typeof body?.source === 'string' ? body.source : 'direct';\n    const sourceProjectId = typeof body?.source_project_id === 'string' ? body.source_project_id : null;
     if (problem.length < 8 || problem.length > 4000) return json({ error: 'Problem must contain 8-4000 characters.' }, 400, corsHeaders);
 
     const { data: memberships, error: membershipError } = await userClient.from('organization_members').select('organization_id').eq('user_id', user.id).limit(1);
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
     const { data: analysis, error: analysisError } = await adminClient.from('ai_analyses').insert({ restaurant_id: restaurant.id, user_id: user.id, problem, diagnosis: plan.diagnosis, root_causes: plan.root_causes, recommendations: plan.actions, priority: priorityFromNumber(plan.mission.priority) }).select('id,created_at').single();
     if (analysisError) throw analysisError;
 
-    const missionId = crypto.randomUUID();
+    if (sourceProjectId) {\n      const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();\n      if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);\n    }\n\n    const missionId = crypto.randomUUID();
     const decision = {
       decision_type: 'growth_mission_proposal',
       selected_opportunity: plan.mission.title,
