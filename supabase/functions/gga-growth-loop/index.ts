@@ -1,9 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { callOpenRouter } from '../_shared/ai.ts';
-import { evaluateStructuredOutput } from '../_shared/quality.ts';
-import { selectModel } from '../_shared/router.ts';
-import { getCorsHeaders } from '../_shared/cors.ts';
-import type { AiTask } from '../_shared/ai.ts';
+import { callOpenRouter } from './_shared/ai.ts';
+import { evaluateStructuredOutput } from './_shared/quality.ts';
+import { selectModel } from './_shared/router.ts';
+import { getCorsHeaders } from './_shared/cors.ts';
+import type { AiTask } from './_shared/ai.ts';
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 type Plan = {
