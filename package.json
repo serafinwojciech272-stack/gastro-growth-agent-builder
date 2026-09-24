@@ -12,7 +12,8 @@
     "test": "npm run test:unit",
     "test:e2e": "playwright test",
     "test:e2e:website-builder:m7": "node scripts/e2e/website-builder-m7.mjs",
-    "test:e2e:website-builder:m7.2": "node scripts/e2e/website-builder-m7-2.mjs"
+    "test:e2e:website-builder:m7.2": "node scripts/e2e/website-builder-m7-2.mjs",
+    "test:e2e:website-builder:m7.3": "node scripts/e2e/website-builder-m7-3.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
@@ -22,7 +23,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.1",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^7.13.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
