@@ -14,10 +14,25 @@ type AdaptiveAdjustment = {
   confidence: number;
 };
 
+type Prediction = {
+  horizon: string;
+  predicted_outcome: string;
+  baseline: number | null;
+  target: number | null;
+  expected_value: number | null;
+  unit: string | null;
+  probability_of_success: number;
+  confidence: number;
+  risk_level: 'low' | 'medium' | 'high';
+  key_assumptions: string[];
+  leading_indicators: string[];
+  failure_conditions: string[];
+};
 type Plan = {
   diagnosis: string;
   root_causes: string[];
   mission: { title: string; goal: string; priority: number; target_value: number | null; baseline_value: number | null; unit: string | null };
+  prediction: Prediction;
   actions: Array<{ title: string; description: string; action_type: string; impact_score: number; effort_score: number; risk_level: 'low' | 'medium' | 'high' }>;
 };
 
@@ -113,7 +128,7 @@ Deno.serve(async (req) => {
       task,
       selectedModel: modelChoice.model,
       temperature: 0.15,
-      system: `You are GA's governed growth strategist. Analyze the business problem and produce one coherent growth plan. Never invent business metrics. Missing numeric baselines or targets must be null. Separate facts from assumptions in the diagnosis. Prefer measurable goals and low-risk actions. Return JSON only with diagnosis, root_causes, mission and actions. diagnosis max 700 chars; root_causes 2-5; actions 2-5. mission priority 0-100. Every action requires title, description, action_type, impact_score 0-100, effort_score 0-100, risk_level low|medium|high.`,
+      system: `You are GA's governed growth strategist and predictive decision engine. Analyze the business problem and produce one coherent growth plan. Never invent business metrics. Missing numeric baselines, targets or expected values must be null. Separate facts from assumptions. Prediction is not a fact: explicitly expose assumptions, uncertainty and failure conditions. Never assign high confidence when evidence is weak. Prefer measurable goals and low-risk actions. Return JSON only with diagnosis, root_causes, mission, prediction and actions. diagnosis max 700 chars; root_causes 2-5; actions 2-5. mission priority 0-100. prediction must contain horizon, predicted_outcome, baseline, target, expected_value, unit, probability_of_success 0-1, confidence 0-1, risk_level low|medium|high, key_assumptions 1-5, leading_indicators 1-5, failure_conditions 1-5. Every action requires title, description, action_type, impact_score 0-100, effort_score 0-100, risk_level low|medium|high.`,
       user: JSON.stringify({
         business: restaurant,
         problem,
@@ -127,7 +142,8 @@ Deno.serve(async (req) => {
     });
 
     const plan = normalizePlan(parseJson(ai.content));
-    const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
+    const prediction = calibratePrediction(plan.prediction, plan.mission, qualitySafeNumber(ai.usage?.totalTokens));
+    const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
     const selfEvaluation = finalizeSelfEvaluation(priorSelfEvaluation, quality.score, adaptiveAdjustment);
@@ -148,6 +164,7 @@ Deno.serve(async (req) => {
       learning_context: learningContext,
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
+      prediction,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -163,6 +180,7 @@ Deno.serve(async (req) => {
       learning_context: learningContext,
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
+      prediction,
     };
     const diagnosisJson = {
       problem,
@@ -176,6 +194,7 @@ Deno.serve(async (req) => {
       learning_context: learningContext,
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
+      prediction,
     };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
@@ -183,7 +202,7 @@ Deno.serve(async (req) => {
       business_id: restaurant.business_profile_id,
       requested_by_user_id: user.id,
       status: 'awaiting_approval',
-      engine_version: 'growth-loop-v3',
+      engine_version: 'growth-loop-v4',
       diagnosis_json: diagnosisJson,
       decision_json: decision,
       mission_json: missionJson,
@@ -205,7 +224,7 @@ Deno.serve(async (req) => {
     const { data: actions, error: actionsError } = await adminClient.from('actions').insert(actionRows).select('id,restaurant_id,action_type,title,description,status,priority,payload,created_at');
     if (actionsError) throw actionsError;
 
-    const { error: telemetryError } = await adminClient.rpc('record_ai_run', { p_restaurant_id: restaurant.id, p_task: task, p_model: ai.model, p_attempts: ai.attempts, p_latency_ms: ai.latencyMs, p_prompt_tokens: ai.usage?.promptTokens ?? null, p_completion_tokens: ai.usage?.completionTokens ?? null, p_total_tokens: ai.usage?.totalTokens ?? null, p_success: true, p_quality_score: quality.score, p_metadata: { pipeline: 'governed-growth-loop', analysis_id: analysis.id, mission_id: mission.id } });
+    const { error: telemetryError } = await adminClient.rpc('record_ai_run', { p_restaurant_id: restaurant.id, p_task: task, p_model: ai.model, p_attempts: ai.attempts, p_latency_ms: ai.latencyMs, p_prompt_tokens: ai.usage?.promptTokens ?? null, p_completion_tokens: ai.usage?.completionTokens ?? null, p_total_tokens: ai.usage?.totalTokens ?? null, p_success: true, p_quality_score: quality.score, p_metadata: { pipeline: 'governed-growth-loop', analysis_id: analysis.id, mission_id: mission.id, prediction: { probability_of_success: prediction.probability_of_success, confidence: prediction.confidence, risk_level: prediction.risk_level, horizon: prediction.horizon } } });
     if (telemetryError) console.error('Growth telemetry error:', telemetryError);
 
     return json({ pipeline: 'observe-diagnose-decide-propose', analysis_id: analysis.id, mission, actions: actions ?? [], quality_score: quality.score, model: ai.model, next_step: 'customer_approval' }, 200, corsHeaders);
@@ -374,7 +393,48 @@ function parseJson<T = Record<string, unknown>>(raw: string): T {
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try { return JSON.parse(cleaned) as T; } catch { const start = cleaned.indexOf('{'); const end = cleaned.lastIndexOf('}'); if (start < 0 || end <= start) throw new Error('AI returned invalid structured data'); return JSON.parse(cleaned.slice(start, end + 1)) as T; }
 }
-function normalizePlan(input: Partial<Plan>): Plan { const mission = input.mission ?? {}; const actions = Array.isArray(input.actions) ? input.actions : []; return { diagnosis: String(input.diagnosis || 'No diagnosis returned.').slice(0, 700), root_causes: Array.isArray(input.root_causes) ? input.root_causes.slice(0, 5).map(String) : [], mission: { title: String(mission.title || 'Growth Mission').slice(0, 160), goal: String(mission.goal || 'Improve business growth').slice(0, 500), priority: clamp(mission.priority, 0, 100, 50), target_value: numberOrNull(mission.target_value), baseline_value: numberOrNull(mission.baseline_value), unit: mission.unit == null ? null : String(mission.unit).slice(0, 40) }, actions: actions.slice(0, 5).map((action) => ({ title: String(action?.title || 'Action').slice(0, 180), description: String(action?.description || '').slice(0, 1000), action_type: String(action?.action_type || 'recommendation').slice(0, 60), impact_score: clamp(action?.impact_score, 0, 100, 50), effort_score: clamp(action?.effort_score, 0, 100, 50), risk_level: action?.risk_level === 'high' || action?.risk_level === 'medium' ? action.risk_level : 'low' })) }; }
+function normalizePlan(input: Partial<Plan>): Plan {
+  const mission = input.mission ?? {};
+  const rawPrediction = input.prediction ?? {};
+  const actions = Array.isArray(input.actions) ? input.actions : [];
+  const prediction: Prediction = {
+    horizon: String(rawPrediction.horizon || 'not specified').slice(0, 80),
+    predicted_outcome: String(rawPrediction.predicted_outcome || mission.goal || 'Outcome not specified.').slice(0, 500),
+    baseline: numberOrNull(rawPrediction.baseline),
+    target: numberOrNull(rawPrediction.target),
+    expected_value: numberOrNull(rawPrediction.expected_value),
+    unit: rawPrediction.unit == null ? null : String(rawPrediction.unit).slice(0, 40),
+    probability_of_success: clampFloat(rawPrediction.probability_of_success, 0, 1, 0.5),
+    confidence: clampFloat(rawPrediction.confidence, 0, 1, 0.35),
+    risk_level: rawPrediction.risk_level === 'high' || rawPrediction.risk_level === 'medium' ? rawPrediction.risk_level : 'low',
+    key_assumptions: Array.isArray(rawPrediction.key_assumptions) ? rawPrediction.key_assumptions.slice(0,5).map(String) : [],
+    leading_indicators: Array.isArray(rawPrediction.leading_indicators) ? rawPrediction.leading_indicators.slice(0,5).map(String) : [],
+    failure_conditions: Array.isArray(rawPrediction.failure_conditions) ? rawPrediction.failure_conditions.slice(0,5).map(String) : [],
+  };
+  return {
+    diagnosis: String(input.diagnosis || 'No diagnosis returned.').slice(0, 700),
+    root_causes: Array.isArray(input.root_causes) ? input.root_causes.slice(0, 5).map(String) : [],
+    mission: { title: String(mission.title || 'Growth Mission').slice(0, 160), goal: String(mission.goal || 'Improve business growth').slice(0, 500), priority: clamp(mission.priority, 0, 100, 50), target_value: numberOrNull(mission.target_value), baseline_value: numberOrNull(mission.baseline_value), unit: mission.unit == null ? null : String(mission.unit).slice(0, 40) },
+    prediction,
+    actions: actions.slice(0, 5).map((action) => ({ title: String(action?.title || 'Action').slice(0, 180), description: String(action?.description || '').slice(0, 1000), action_type: String(action?.action_type || 'recommendation').slice(0, 60), impact_score: clamp(action?.impact_score, 0, 100, 50), effort_score: clamp(action?.effort_score, 0, 100, 50), risk_level: action?.risk_level === 'high' || action?.risk_level === 'medium' ? action.risk_level : 'low' })),
+  };
+}
+function clampFloat(value: unknown, min: number, max: number, fallback: number): number { const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback; return Math.max(min, Math.min(max, n)); }
+function qualitySafeNumber(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) ? value : 0; }
+function calibratePrediction(prediction: Prediction, mission: Plan['mission'], _tokenCount: number): Prediction {
+  const hasNumericEvidence = prediction.baseline !== null || prediction.target !== null || prediction.expected_value !== null;
+  const evidenceFactor = hasNumericEvidence ? 1 : 0.75;
+  const boundedConfidence = Math.min(prediction.confidence, hasNumericEvidence ? 0.9 : 0.55);
+  const probability = Math.max(0.05, Math.min(0.95, prediction.probability_of_success * evidenceFactor));
+  return {
+    ...prediction,
+    baseline: prediction.baseline ?? mission.baseline_value,
+    target: prediction.target ?? mission.target_value,
+    unit: prediction.unit ?? mission.unit,
+    probability_of_success: Number(probability.toFixed(3)),
+    confidence: Number(boundedConfidence.toFixed(3)),
+  };
+}
 function numberOrNull(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
 function clamp(value: unknown, min: number, max: number, fallback: number): number { const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : fallback; return Math.max(min, Math.min(max, n)); }
 function priorityFromNumber(value: number): Priority { if (value >= 90) return 'critical'; if (value >= 70) return 'high'; if (value >= 40) return 'medium'; return 'low'; }
