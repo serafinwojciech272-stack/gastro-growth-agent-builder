@@ -42,6 +42,17 @@ type PolicyLearning = {
   basis: string[];
   stats: Record<PolicyName, { uses: number; successes: number; misses: number; success_rate: number | null; avg_confidence: number | null }>;
 };
+type CounterfactualScenario = { policy: PolicyName; expected_success: number; risk: 'low' | 'medium' | 'high'; evidence_adjustment: number; rationale: string; };
+type CounterfactualDecision = {
+  version: 'm9.9';
+  selected_policy: PolicyName;
+  scenarios: CounterfactualScenario[];
+  delta_vs_next_best: number;
+  confidence: number;
+  evidence_count: number;
+  basis: string[];
+  guardrails: string[];
+};
 type DecisionPolicy = { version: 'm9.7'; policy: PolicyName; confidence: number; risk_budget: 'low' | 'medium' | 'high'; rationale: string; evidence_count: number; triggers: string[]; guardrails: string[]; learning: PolicyLearning; };
 type Plan = {
   diagnosis: string;
@@ -160,7 +171,7 @@ Deno.serve(async (req) => {
 
     const plan = normalizePlan(parseJson(ai.content));
     const prediction = derivePredictiveDecision(learningContext, plan.prediction, plan.mission, adaptiveAdjustment, qualitySafeNumber(ai.usage?.totalTokens));
-    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);
+    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);\n    const counterfactualDecision = deriveCounterfactualDecision(prediction, adaptiveAdjustment, policyLearning, decisionPolicy);
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
@@ -472,4 +483,71 @@ function deriveDecisionPolicy(context: Array<Record<string, unknown>>, predictio
   const guardrails=['Approval remains mandatory before execution.','No policy may invent KPI evidence or bypass measurement.','High-risk predictions cannot receive a high execution risk budget.','Explore is the default when evidence is insufficient.','Policy learning uses VERIFIED outcomes only and never self-rewards from predictions.'];
   const confidence=Math.min(0.9,Math.max(0.25,(evidence>=3?0.75:evidence>=1?0.55:0.35)+(probability>=0.7?0.1:0)-(risk==='high'?0.1:0)));
   return {version:'m9.7',policy,confidence:Number(confidence.toFixed(3)),risk_budget:riskBudget,rationale,evidence_count:evidence,triggers,guardrails,learning};
+}function deriveCounterfactualDecision(
+  prediction: Prediction,
+  adaptive: AdaptiveAdjustment,
+  learning: PolicyLearning,
+  selected: DecisionPolicy,
+): CounterfactualDecision {
+  const base = Math.max(0.05, Math.min(0.95, prediction.probability_of_success));
+  const historical = (policy: PolicyName) => learning.stats[policy].success_rate;
+  const score = (policy: PolicyName): number => {
+    const empirical = historical(policy);
+    const empiricalWeight = learning.stats[policy].uses >= 3 && empirical !== null ? Math.min(0.5, learning.stats[policy].uses * 0.08) : 0;
+    let value = base;
+    if (empirical !== null) value = (base * (1 - empiricalWeight)) + (empirical * empiricalWeight);
+    if (policy === 'retain' && adaptive.applied && adaptive.adjustments.action_bias === 'retain') value += 0.04;
+    if (policy === 'change' && adaptive.applied && adaptive.adjustments.action_bias === 'change') value += 0.07;
+    if (policy === 'reduce_risk' && adaptive.applied && adaptive.adjustments.action_bias === 'reduce_risk') value += 0.08;
+    if (policy === 'explore' && learning.evidence_count < 3) value += 0.03;
+    if (policy === 'change' && prediction.risk_level === 'high') value -= 0.03;
+    return Math.max(0.05, Math.min(0.95, value));
+  };
+  const riskFor = (policy: PolicyName): CounterfactualScenario['risk'] => {
+    if (policy === 'reduce_risk' || policy === 'explore') return 'low';
+    if (policy === 'change' && prediction.risk_level === 'high') return 'medium';
+    return prediction.risk_level;
+  };
+  const rationaleFor = (policy: PolicyName): string => {
+    if (policy === 'retain') return 'Preserves the current direction; benefits from verified historical performance when available.';
+    if (policy === 'change') return 'Tests a materially different direction when repetition has weak evidence.';
+    if (policy === 'reduce_risk') return 'Prioritizes downside containment when measured evidence indicates elevated execution risk.';
+    return 'Uses a bounded experiment to acquire evidence when policy-specific history is insufficient.';
+  };
+  const policies: PolicyName[] = ['retain', 'change', 'reduce_risk', 'explore'];
+  const scenarios = policies.map((policy) => ({
+    policy,
+    expected_success: Number(score(policy).toFixed(3)),
+    risk: riskFor(policy),
+    evidence_adjustment: Number((score(policy) - base).toFixed(3)),
+    rationale: rationaleFor(policy),
+  })).sort((a,b) => b.expected_success - a.expected_success);
+  const selectedPolicy = scenarios.find((s) => s.policy === selected.policy)?.policy ?? scenarios[0].policy;
+  const selectedScore = scenarios.find((s) => s.policy === selectedPolicy)?.expected_success ?? base;
+  const nextBest = scenarios.find((s) => s.policy !== selectedPolicy)?.expected_success ?? selectedScore;
+  const delta = Number((selectedScore - nextBest).toFixed(3));
+  const confidence = Number(Math.min(0.9, Math.max(0.25,
+    0.3 + Math.min(0.35, learning.evidence_count * 0.06) + (delta >= 0.1 ? 0.15 : delta >= 0.05 ? 0.08 : 0)
+  )).toFixed(3));
+  return {
+    version: 'm9.9',
+    selected_policy: selectedPolicy,
+    scenarios,
+    delta_vs_next_best: delta,
+    confidence,
+    evidence_count: learning.evidence_count,
+    basis: [
+      'Counterfactuals are bounded scenario estimates, not observed outcomes.',
+      'Only VERIFIED policy outcomes contribute empirical historical adjustments.',
+      'The selected policy remains governed by the existing Decision Policy and Approval Gate.',
+    ],
+    guardrails: [
+      'No scenario executes automatically.',
+      'No counterfactual estimate is persisted as measured KPI evidence.',
+      'High-risk scenarios cannot create a high execution risk budget by themselves.',
+      'Approval remains mandatory before any mission execution.',
+    ],
+  };
 }
+
+
