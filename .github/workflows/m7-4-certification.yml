@@ -1,0 +1,45 @@
+name: M7.4 Website Builder Production E2E Certification
+
+on:
+  push:
+    branches:
+      - feat/m7-4-production-e2e-certification
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: Website source URL for certification
+        required: true
+        default: https://www.mozilla.org/
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  m7-4:
+    name: Authenticated production lifecycle certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_URL: https://jjybnpoqnyycyrrzbekd.supabase.co
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      M7_E2E_EMAIL: ${{ secrets.M7_E2E_EMAIL }}
+      M7_E2E_PASSWORD: ${{ secrets.M7_E2E_PASSWORD }}
+      M7_SOURCE_URL: ${{ inputs.source_url || 'https://www.mozilla.org/' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate certification secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ANON_KEY}" || { echo "SUPABASE_ANON_KEY missing"; exit 1; }
+          test -n "${M7_E2E_EMAIL}" || { echo "M7_E2E_EMAIL missing"; exit 1; }
+          test -n "${M7_E2E_PASSWORD}" || { echo "M7_E2E_PASSWORD missing"; exit 1; }
+          echo "M7.4 SECRET PREFLIGHT PASS"
+      - name: Run production certification
+        run: npm run test:e2e:website-builder:m7.4
