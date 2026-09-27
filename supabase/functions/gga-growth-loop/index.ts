@@ -66,6 +66,20 @@ type DecisionArbitration = {
   guardrails: string[];
   source_refs: string[];
 };
+type DecisionGovernance = {
+  version: 'm9.11';
+  status: 'trusted' | 'constrained' | 'blocked';
+  trust_score: number;
+  evidence_quality: 'verified' | 'partial' | 'insufficient';
+  policy_compliance: boolean;
+  safety_compliance: boolean;
+  provenance_completeness: boolean;
+  unresolved_conflicts: string[];
+  blocking_reasons: string[];
+  required_human_checks: string[];
+  final_decision_ref: string;
+  guardrails: string[];
+};
 type DecisionPolicy = { version: 'm9.7'; policy: PolicyName; confidence: number; risk_budget: 'low' | 'medium' | 'high'; rationale: string; evidence_count: number; triggers: string[]; guardrails: string[]; learning: PolicyLearning; };
 type Plan = {
   diagnosis: string;
@@ -187,6 +201,7 @@ Deno.serve(async (req) => {
     const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);
     const counterfactualDecision = deriveCounterfactualDecision(prediction, adaptiveAdjustment, policyLearning, decisionPolicy);
     const decisionArbitration = deriveDecisionArbitration(prediction, adaptiveAdjustment, policyLearning, counterfactualDecision, decisionPolicy);
+    const decisionGovernance = deriveDecisionGovernance(prediction, adaptiveAdjustment, policyLearning, counterfactualDecision, decisionPolicy, decisionArbitration);
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
@@ -212,6 +227,7 @@ Deno.serve(async (req) => {
       decision_policy: decisionPolicy,
       counterfactual_decision: counterfactualDecision,
       decision_arbitration: decisionArbitration,
+      decision_governance: decisionGovernance,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -229,6 +245,8 @@ Deno.serve(async (req) => {
       self_evaluation: selfEvaluation,
       prediction,
       decision_policy: decisionPolicy,
+      decision_governance: decisionGovernance,
+      decision_arbitration: decisionArbitration,
     };
     const diagnosisJson = {
       problem,
@@ -245,6 +263,7 @@ Deno.serve(async (req) => {
       prediction,
       counterfactual_decision: counterfactualDecision,
       decision_arbitration: decisionArbitration,
+      decision_governance: decisionGovernance,
     };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
@@ -252,7 +271,7 @@ Deno.serve(async (req) => {
       business_id: restaurant.business_profile_id,
       requested_by_user_id: user.id,
       status: 'awaiting_approval',
-      engine_version: 'growth-loop-v5',
+      engine_version: 'growth-loop-v6',
       diagnosis_json: diagnosisJson,
       decision_json: decision,
       mission_json: missionJson,
@@ -585,6 +604,81 @@ function deriveDecisionPolicy(context: Array<Record<string, unknown>>, predictio
       `policy_learning:recommendation=${learning.recommended_policy},confidence=${learning.recommendation_confidence}`,
       `counterfactual:selected=${counterfactual.selected_policy},delta=${counterfactual.delta_vs_next_best}`,
       `selected_policy=${selected.policy}`,
+    ],
+  };
+}
+
+function deriveDecisionGovernance(
+  prediction: Prediction,
+  adaptive: AdaptiveAdjustment,
+  learning: PolicyLearning,
+  counterfactual: CounterfactualDecision,
+  selected: DecisionPolicy,
+  arbitration: DecisionArbitration,
+): DecisionGovernance {
+  const unresolved = arbitration.conflicts.filter((c) => !c.toLowerCase().includes('high-risk prediction conflicts'));
+  const blocking: string[] = [];
+  const humanChecks: string[] = [
+    'Human approval is required before mission execution.',
+    'Human review must confirm that the proposed KPI baseline and target are supported by evidence.',
+  ];
+  const evidenceQuality: DecisionGovernance['evidence_quality'] =
+    prediction.evidence_count >= 3 ? 'verified' :
+    prediction.evidence_count > 0 ? 'partial' : 'insufficient';
+
+  if (prediction.risk_level === 'high' && selected.risk_budget === 'high') {
+    blocking.push('High-risk prediction cannot receive a high execution risk budget.');
+  }
+  if (!arbitration.source_refs.length) {
+    blocking.push('Decision provenance is incomplete.');
+  }
+  if (unresolved.length > 0) {
+    humanChecks.push('Resolve arbitration conflicts before approving execution.');
+  }
+  if (counterfactual.confidence >= 0.6) {
+    humanChecks.push('Treat counterfactual scenarios as estimates, not causal evidence.');
+  }
+
+  const policyCompliance = selected.guardrails.length >= 4 &&
+    selected.guardrails.some((g) => g.toLowerCase().includes('approval'));
+  const safetyCompliance = !blocking.some((b) => b.toLowerCase().includes('risk budget'));
+  const provenanceCompleteness = arbitration.source_refs.length >= 4;
+  const evidenceScore = evidenceQuality === 'verified' ? 100 : evidenceQuality === 'partial' ? 65 : 30;
+  const complianceScore = policyCompliance ? 100 : 50;
+  const safetyScore = safetyCompliance ? 100 : 20;
+  const provenanceScore = provenanceCompleteness ? 100 : 40;
+  const conflictPenalty = unresolved.length ? Math.min(30, unresolved.length * 10) : 0;
+  const trustScore = Math.max(0, Math.min(100, Math.round(
+    evidenceScore * 0.35 + complianceScore * 0.2 + safetyScore * 0.2 + provenanceScore * 0.15 +
+    arbitration.confidence * 100 * 0.1 - conflictPenalty
+  )));
+
+  let status: DecisionGovernance['status'] = 'trusted';
+  if (blocking.length || !safetyCompliance) status = 'blocked';
+  else if (evidenceQuality !== 'verified' || unresolved.length || trustScore < 75) status = 'constrained';
+
+  if (status !== 'trusted') {
+    humanChecks.push('Do not interpret governance status as permission to auto-execute.');
+  }
+
+  return {
+    version: 'm9.11',
+    status,
+    trust_score: trustScore,
+    evidence_quality: evidenceQuality,
+    policy_compliance: policyCompliance,
+    safety_compliance: safetyCompliance,
+    provenance_completeness: provenanceCompleteness,
+    unresolved_conflicts: unresolved,
+    blocking_reasons: blocking,
+    required_human_checks: [...new Set(humanChecks)].slice(0, 6),
+    final_decision_ref: `arbitration:${arbitration.final_policy}:${arbitration.winning_signal}`,
+    guardrails: [
+      'Governance never bypasses the Approval Gate.',
+      'Insufficient evidence cannot be represented as empirical proof.',
+      'Counterfactual estimates are not measured outcomes.',
+      'No automatic execution is authorized by this layer.',
+      'High-risk decisions require explicit human review.',
     ],
   };
 }
