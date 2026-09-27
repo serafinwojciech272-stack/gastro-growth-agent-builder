@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feat/m7-4-production-e2e-certification
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       source_url:
