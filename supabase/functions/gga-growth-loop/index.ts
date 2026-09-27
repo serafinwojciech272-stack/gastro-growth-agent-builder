@@ -451,7 +451,7 @@ function derivePolicyLearning(context: Array<Record<string, unknown>>): PolicyLe
   };
 }
 
-function deriveDecisionPolicy(context: Array<Record<string, unknown>>, prediction: Prediction, adaptive: AdaptiveAdjustment), learning: PolicyLearning): DecisionPolicy {
+function deriveDecisionPolicy(context: Array<Record<string, unknown>>, prediction: Prediction, adaptive: AdaptiveAdjustment, learning: PolicyLearning): DecisionPolicy {
   const evidence = prediction.evidence_count;
   const probability = prediction.probability_of_success;
   const risk = prediction.risk_level;
