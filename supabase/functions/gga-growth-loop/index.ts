@@ -6,6 +6,14 @@ import { getCorsHeaders } from './_shared/cors.ts';
 import type { AiTask } from './_shared/ai.ts';
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
+type AdaptiveAdjustment = {
+  applied: boolean;
+  source_mission_id: string | null;
+  reason: string;
+  adjustments: { priority_delta: number; target_value: number | null; baseline_value: number | null; action_bias: 'retain' | 'change' | 'reduce_risk' };
+  confidence: number;
+};
+
 type Plan = {
   diagnosis: string;
   root_causes: string[];
@@ -87,6 +95,9 @@ Deno.serve(async (req) => {
       };
     });
 
+    // M9.4 Adaptive Decision Loop: derive bounded adjustments from measured learning.
+    const adaptiveAdjustment = deriveAdaptiveAdjustment(learningContext);
+
     if (sourceProjectId) {
       const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,diagnosis_json,decision_json,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);
@@ -106,6 +117,7 @@ Deno.serve(async (req) => {
         source_project_id: sourceProjectId,
         website_context: websiteContext,
         learning_context: learningContext,
+        adaptive_adjustment: adaptiveAdjustment,
       }),
     });
 
@@ -127,6 +139,7 @@ Deno.serve(async (req) => {
       source,
       source_project_id: sourceProjectId,
       learning_context: learningContext,
+      adaptive_adjustment: adaptiveAdjustment,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -140,6 +153,7 @@ Deno.serve(async (req) => {
       source,
       source_project_id: sourceProjectId,
       learning_context: learningContext,
+      adaptive_adjustment: adaptiveAdjustment,
     };
     const diagnosisJson = {
       problem,
@@ -151,6 +165,7 @@ Deno.serve(async (req) => {
       source,
       source_project_id: sourceProjectId,
       learning_context: learningContext,
+      adaptive_adjustment: adaptiveAdjustment,
     };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
@@ -189,6 +204,63 @@ Deno.serve(async (req) => {
     return json({ error: error instanceof Error ? error.message : 'Unexpected growth loop error.' }, 502, corsHeaders);
   }
 });
+
+function deriveAdaptiveAdjustment(context: Array<Record<string, unknown>>): AdaptiveAdjustment {
+  const verified = context
+    .filter((item) => item?.confidence != null && Number(item.confidence) >= 0.75)
+    .map((item) => ({ ...item, learning: item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {} }))
+    .slice(0, 5);
+  const latest = verified[0];
+  if (!latest) {
+    return {
+      applied: false,
+      source_mission_id: null,
+      reason: 'No sufficiently confident prior outcome is available for adaptive adjustment.',
+      adjustments: { priority_delta: 0, target_value: null, baseline_value: null, action_bias: 'retain' },
+      confidence: 0.35,
+    };
+  }
+  const learning = latest.learning as Record<string, unknown>;
+  const status = String(learning.target_status ?? '');
+  const lesson = String(learning.lesson_type ?? '');
+  const direction = String(learning.target_direction ?? '');
+  const delta = typeof learning.delta === 'number' && Number.isFinite(learning.delta) ? learning.delta : null;
+  if (status === 'target_achieved' || lesson === 'TARGET_ACHIEVED') {
+    return {
+      applied: true,
+      source_mission_id: String(latest.mission_id),
+      reason: 'Prior target was achieved; preserve the successful direction while avoiding unnecessary escalation.',
+      adjustments: { priority_delta: -5, target_value: null, baseline_value: null, action_bias: 'retain' },
+      confidence: Math.min(0.95, Number(latest.confidence)),
+    };
+  }
+  if (status === 'target_missed' || lesson === 'TARGET_MISSED') {
+    const priorityDelta = direction === 'higher_is_better' || direction === 'maximize' ? 5 : 8;
+    return {
+      applied: true,
+      source_mission_id: String(latest.mission_id),
+      reason: 'Prior target was missed; increase decision attention and require a materially adapted action plan.',
+      adjustments: { priority_delta: priorityDelta, target_value: null, baseline_value: null, action_bias: delta != null && delta < 0 ? 'change' : 'reduce_risk' },
+      confidence: Math.min(0.9, Number(latest.confidence)),
+    };
+  }
+  if (lesson === 'POSITIVE_DELTA' || (delta != null && delta > 0)) {
+    return {
+      applied: true,
+      source_mission_id: String(latest.mission_id),
+      reason: 'Prior measured outcome shows positive movement; retain the effective direction.',
+      adjustments: { priority_delta: 0, target_value: null, baseline_value: null, action_bias: 'retain' },
+      confidence: Math.min(0.8, Number(latest.confidence)),
+    };
+  }
+  return {
+    applied: false,
+    source_mission_id: String(latest.mission_id),
+    reason: 'Prior learning is insufficient for a safe adaptive change.',
+    adjustments: { priority_delta: 0, target_value: null, baseline_value: null, action_bias: 'retain' },
+    confidence: Math.min(0.6, Number(latest.confidence)),
+  };
+}
 
 function parseJson<T = Record<string, unknown>>(raw: string): T {
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
