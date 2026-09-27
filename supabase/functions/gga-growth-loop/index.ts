@@ -15,6 +15,7 @@ type AdaptiveAdjustment = {
 };
 
 type Prediction = {
+  version: 'm9.6';
   horizon: string;
   predicted_outcome: string;
   baseline: number | null;
@@ -27,6 +28,9 @@ type Prediction = {
   key_assumptions: string[];
   leading_indicators: string[];
   failure_conditions: string[];
+  evidence_count: number;
+  historical_success_rate: number | null;
+  prediction_method: 'evidence_bounded' | 'ai_plus_history' | 'insufficient_evidence';
 };
 type Plan = {
   diagnosis: string;
@@ -142,7 +146,7 @@ Deno.serve(async (req) => {
     });
 
     const plan = normalizePlan(parseJson(ai.content));
-    const prediction = calibratePrediction(plan.prediction, plan.mission, qualitySafeNumber(ai.usage?.totalTokens));
+    const prediction = derivePredictiveDecision(learningContext, plan.prediction, plan.mission, adaptiveAdjustment, qualitySafeNumber(ai.usage?.totalTokens));
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
@@ -398,6 +402,7 @@ function normalizePlan(input: Partial<Plan>): Plan {
   const rawPrediction = input.prediction ?? {};
   const actions = Array.isArray(input.actions) ? input.actions : [];
   const prediction: Prediction = {
+    version: 'm9.6',
     horizon: String(rawPrediction.horizon || 'not specified').slice(0, 80),
     predicted_outcome: String(rawPrediction.predicted_outcome || mission.goal || 'Outcome not specified.').slice(0, 500),
     baseline: numberOrNull(rawPrediction.baseline),
@@ -410,6 +415,9 @@ function normalizePlan(input: Partial<Plan>): Plan {
     key_assumptions: Array.isArray(rawPrediction.key_assumptions) ? rawPrediction.key_assumptions.slice(0,5).map(String) : [],
     leading_indicators: Array.isArray(rawPrediction.leading_indicators) ? rawPrediction.leading_indicators.slice(0,5).map(String) : [],
     failure_conditions: Array.isArray(rawPrediction.failure_conditions) ? rawPrediction.failure_conditions.slice(0,5).map(String) : [],
+    evidence_count: 0,
+    historical_success_rate: null,
+    prediction_method: 'insufficient_evidence',
   };
   return {
     diagnosis: String(input.diagnosis || 'No diagnosis returned.').slice(0, 700),
@@ -421,18 +429,42 @@ function normalizePlan(input: Partial<Plan>): Plan {
 }
 function clampFloat(value: unknown, min: number, max: number, fallback: number): number { const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback; return Math.max(min, Math.min(max, n)); }
 function qualitySafeNumber(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) ? value : 0; }
-function calibratePrediction(prediction: Prediction, mission: Plan['mission'], _tokenCount: number): Prediction {
+function derivePredictiveDecision(
+  context: Array<Record<string, unknown>>,
+  prediction: Prediction,
+  mission: Plan['mission'],
+  adaptive: AdaptiveAdjustment,
+  _tokenCount: number,
+): Prediction {
+  const observed = context
+    .map((item) => item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {})
+    .filter((learning) => learning.quality === 'VERIFIED' && typeof learning.confidence === 'number' || learning.quality === 'VERIFIED');
+  const successful = observed.filter((learning) => {
+    const status = String(learning.target_status ?? '').toLowerCase();
+    const lesson = String(learning.lesson_type ?? '').toUpperCase();
+    return status === 'achieved' || status === 'target_achieved' || lesson === 'TARGET_ACHIEVED' || lesson === 'POSITIVE_DELTA';
+  });
+  const evidenceCount = observed.length;
+  const historicalRate = evidenceCount > 0 ? successful.length / evidenceCount : null;
   const hasNumericEvidence = prediction.baseline !== null || prediction.target !== null || prediction.expected_value !== null;
-  const evidenceFactor = hasNumericEvidence ? 1 : 0.75;
-  const boundedConfidence = Math.min(prediction.confidence, hasNumericEvidence ? 0.9 : 0.55);
-  const probability = Math.max(0.05, Math.min(0.95, prediction.probability_of_success * evidenceFactor));
+  const evidenceFactor = evidenceCount >= 3 ? 1 : evidenceCount > 0 ? 0.9 : 0.75;
+  const historicalAnchor = historicalRate === null ? prediction.probability_of_success : (prediction.probability_of_success * 0.65) + (historicalRate * 0.35);
+  const probability = Math.max(0.05, Math.min(0.95, historicalAnchor * evidenceFactor));
+  const confidenceCap = evidenceCount >= 3 ? 0.9 : evidenceCount > 0 ? 0.7 : 0.55;
+  const adaptivePenalty = adaptive.applied ? 0.05 : 0;
+  const boundedConfidence = Math.min(prediction.confidence, confidenceCap) - adaptivePenalty;
   return {
     ...prediction,
+    version: 'm9.6',
     baseline: prediction.baseline ?? mission.baseline_value,
     target: prediction.target ?? mission.target_value,
     unit: prediction.unit ?? mission.unit,
-    probability_of_success: Number(probability.toFixed(3)),
-    confidence: Number(boundedConfidence.toFixed(3)),
+    probability_of_success: Number(Math.max(0.05, Math.min(0.95, probability)).toFixed(3)),
+    confidence: Number(Math.max(0.25, boundedConfidence).toFixed(3)),
+    evidence_count: evidenceCount,
+    historical_success_rate: historicalRate === null ? null : Number(historicalRate.toFixed(3)),
+    prediction_method: evidenceCount > 0 ? 'ai_plus_history' : 'insufficient_evidence',
+    risk_level: prediction.risk_level === 'high' || (adaptive.applied && adaptive.adjustments.action_bias === 'reduce_risk') ? 'high' : prediction.risk_level,
   };
 }
 function numberOrNull(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
