@@ -48,6 +48,45 @@ Deno.serve(async (req) => {
     if (!restaurant) return json({ error: 'Complete business onboarding first.' }, 404, corsHeaders);
     if (!restaurant.business_profile_id) return json({ error: 'Business profile is not initialized. Complete onboarding before creating a mission.' }, 409, corsHeaders);
 
+    // M9.3 Learning Loop: retrieve prior measured outcomes for this business before making the next decision.
+    const { data: priorMissions, error: priorMissionError } = await adminClient
+      .from('growth_mission_runs')
+      .select('id,status,mission_json,created_at,updated_at')
+      .eq('business_id', restaurant.business_profile_id)
+      .order('created_at', { ascending: false })
+      .limit(12);
+    if (priorMissionError) throw priorMissionError;
+
+    const priorIds = (priorMissions ?? []).map((row) => row.id);
+    let priorOutcomes: Array<Record<string, unknown>> = [];
+    if (priorIds.length > 0) {
+      const { data: outcomes, error: outcomesError } = await adminClient
+        .from('growth_outcomes')
+        .select('mission_id,status,metrics_before,metrics_after,summary,learning,confidence,learning_json,updated_at')
+        .in('mission_id', priorIds)
+        .order('updated_at', { ascending: false })
+        .limit(12);
+      if (outcomesError) throw outcomesError;
+      priorOutcomes = outcomes ?? [];
+    }
+
+    const learningContext = priorOutcomes.slice(0, 8).map((outcome) => {
+      const mission = (priorMissions ?? []).find((item) => item.id === outcome.mission_id);
+      return {
+        mission_id: outcome.mission_id,
+        mission_title: mission?.mission_json?.title ?? null,
+        mission_goal: mission?.mission_json?.goal ?? null,
+        status: outcome.status,
+        metrics_before: outcome.metrics_before,
+        metrics_after: outcome.metrics_after,
+        summary: outcome.summary,
+        learning: outcome.learning,
+        confidence: outcome.confidence,
+        learning_json: outcome.learning_json,
+        updated_at: outcome.updated_at,
+      };
+    });
+
     if (sourceProjectId) {
       const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,diagnosis_json,decision_json,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (existing) return json({ pipeline: 'observe-diagnose-decide-propose', mission: existing, reused: true, next_step: existing.status === 'awaiting_approval' ? 'customer_approval' : 'existing_mission' }, 200, corsHeaders);
@@ -60,7 +99,14 @@ Deno.serve(async (req) => {
       selectedModel: modelChoice.model,
       temperature: 0.15,
       system: `You are GA's governed growth strategist. Analyze the business problem and produce one coherent growth plan. Never invent business metrics. Missing numeric baselines or targets must be null. Separate facts from assumptions in the diagnosis. Prefer measurable goals and low-risk actions. Return JSON only with diagnosis, root_causes, mission and actions. diagnosis max 700 chars; root_causes 2-5; actions 2-5. mission priority 0-100. Every action requires title, description, action_type, impact_score 0-100, effort_score 0-100, risk_level low|medium|high.`,
-      user: JSON.stringify({ business: restaurant, problem, source, source_project_id: sourceProjectId, website_context: websiteContext }),
+      user: JSON.stringify({
+        business: restaurant,
+        problem,
+        source,
+        source_project_id: sourceProjectId,
+        website_context: websiteContext,
+        learning_context: learningContext,
+      }),
     });
 
     const plan = normalizePlan(parseJson(ai.content));
@@ -80,6 +126,7 @@ Deno.serve(async (req) => {
       source_analysis_id: analysis.id,
       source,
       source_project_id: sourceProjectId,
+      learning_context: learningContext,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -92,6 +139,7 @@ Deno.serve(async (req) => {
       expected_outcome: plan.mission.goal,
       source,
       source_project_id: sourceProjectId,
+      learning_context: learningContext,
     };
     const diagnosisJson = {
       problem,
@@ -102,6 +150,7 @@ Deno.serve(async (req) => {
       model: ai.model,
       source,
       source_project_id: sourceProjectId,
+      learning_context: learningContext,
     };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
