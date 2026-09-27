@@ -26,7 +26,11 @@ export default function WebsiteBuilderPage() {
   const [qa, setQa] = useState<JsonRecord | null>(null);
   const [growthMission, setGrowthMission] = useState<JsonRecord | null>(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
-  const [approvalResult, setApprovalResult] = useState<JsonRecord | null>(null);\n  const [executionBusy, setExecutionBusy] = useState(false);\n  const [measurementBusy, setMeasurementBusy] = useState(false);\n  const [measurementValue, setMeasurementValue] = useState('');\n  const [measurementResult, setMeasurementResult] = useState<JsonRecord | null>(null);
+  const [approvalResult, setApprovalResult] = useState<JsonRecord | null>(null);
+  const [executionBusy, setExecutionBusy] = useState(false);
+  const [measurementBusy, setMeasurementBusy] = useState(false);
+  const [measurementValue, setMeasurementValue] = useState('');
+  const [measurementResult, setMeasurementResult] = useState<JsonRecord | null>(null);
   const completed = project?.completed_stages ?? [];
   const artifacts = project?.artifacts ?? {};
   const stage = WEBSITE_BUILDER_STAGES[active];
