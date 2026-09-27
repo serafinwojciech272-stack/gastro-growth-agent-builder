@@ -171,7 +171,8 @@ Deno.serve(async (req) => {
 
     const plan = normalizePlan(parseJson(ai.content));
     const prediction = derivePredictiveDecision(learningContext, plan.prediction, plan.mission, adaptiveAdjustment, qualitySafeNumber(ai.usage?.totalTokens));
-    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);\n    const counterfactualDecision = deriveCounterfactualDecision(prediction, adaptiveAdjustment, policyLearning, decisionPolicy);
+    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);
+    const counterfactualDecision = deriveCounterfactualDecision(prediction, adaptiveAdjustment, policyLearning, decisionPolicy);
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
