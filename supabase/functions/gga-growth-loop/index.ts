@@ -53,6 +53,19 @@ type CounterfactualDecision = {
   basis: string[];
   guardrails: string[];
 };
+type DecisionArbitration = {
+  version: 'm9.10';
+  final_policy: PolicyName;
+  decision_mode: 'evidence_led' | 'adaptive_led' | 'counterfactual_led' | 'exploration';
+  confidence: number;
+  conflict_detected: boolean;
+  conflicts: string[];
+  winning_signal: 'guardrail' | 'adaptive' | 'policy_learning' | 'counterfactual' | 'prediction' | 'exploration';
+  rationale: string;
+  evidence_count: number;
+  guardrails: string[];
+  source_refs: string[];
+};
 type DecisionPolicy = { version: 'm9.7'; policy: PolicyName; confidence: number; risk_budget: 'low' | 'medium' | 'high'; rationale: string; evidence_count: number; triggers: string[]; guardrails: string[]; learning: PolicyLearning; };
 type Plan = {
   diagnosis: string;
@@ -173,6 +186,7 @@ Deno.serve(async (req) => {
     const prediction = derivePredictiveDecision(learningContext, plan.prediction, plan.mission, adaptiveAdjustment, qualitySafeNumber(ai.usage?.totalTokens));
     const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);
     const counterfactualDecision = deriveCounterfactualDecision(prediction, adaptiveAdjustment, policyLearning, decisionPolicy);
+    const decisionArbitration = deriveDecisionArbitration(prediction, adaptiveAdjustment, policyLearning, counterfactualDecision, decisionPolicy);
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
@@ -196,6 +210,8 @@ Deno.serve(async (req) => {
       self_evaluation: selfEvaluation,
       prediction,
       decision_policy: decisionPolicy,
+      counterfactual_decision: counterfactualDecision,
+      decision_arbitration: decisionArbitration,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -227,6 +243,8 @@ Deno.serve(async (req) => {
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
       prediction,
+      counterfactual_decision: counterfactualDecision,
+      decision_arbitration: decisionArbitration,
     };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
@@ -234,7 +252,7 @@ Deno.serve(async (req) => {
       business_id: restaurant.business_profile_id,
       requested_by_user_id: user.id,
       status: 'awaiting_approval',
-      engine_version: 'growth-loop-v4',
+      engine_version: 'growth-loop-v5',
       diagnosis_json: diagnosisJson,
       decision_json: decision,
       mission_json: missionJson,
@@ -484,7 +502,94 @@ function deriveDecisionPolicy(context: Array<Record<string, unknown>>, predictio
   const guardrails=['Approval remains mandatory before execution.','No policy may invent KPI evidence or bypass measurement.','High-risk predictions cannot receive a high execution risk budget.','Explore is the default when evidence is insufficient.','Policy learning uses VERIFIED outcomes only and never self-rewards from predictions.'];
   const confidence=Math.min(0.9,Math.max(0.25,(evidence>=3?0.75:evidence>=1?0.55:0.35)+(probability>=0.7?0.1:0)-(risk==='high'?0.1:0)));
   return {version:'m9.7',policy,confidence:Number(confidence.toFixed(3)),risk_budget:riskBudget,rationale,evidence_count:evidence,triggers,guardrails,learning};
-}function deriveCounterfactualDecision(
+}function deriveDecisionArbitration(
+  prediction: Prediction,
+  adaptive: AdaptiveAdjustment,
+  learning: PolicyLearning,
+  counterfactual: CounterfactualDecision,
+  selected: DecisionPolicy,
+): DecisionArbitration {
+  const conflicts: string[] = [];
+  const evidence = prediction.evidence_count;
+  const adaptiveStrong = adaptive.applied && adaptive.confidence >= 0.75;
+  const policyStrong = learning.recommended_policy !== 'explore' &&
+    learning.recommendation_confidence >= 0.6 &&
+    learning.stats[learning.recommended_policy].uses >= 3;
+  const counterfactualStrong = counterfactual.confidence >= 0.6 && counterfactual.delta_vs_next_best >= 0.05;
+  const predictionStrong = prediction.confidence >= 0.75 && evidence >= 3;
+
+  if (adaptive.applied && adaptive.adjustments.action_bias !== selected.policy) conflicts.push('Adaptive adjustment conflicts with current policy.');
+  if (policyStrong && learning.recommended_policy !== selected.policy) conflicts.push('Policy learning recommends a different policy.');
+  if (counterfactual.selected_policy !== selected.policy) conflicts.push('Counterfactual comparison selects a different policy.');
+  if (prediction.risk_level === 'high' && selected.risk_budget === 'high') conflicts.push('High-risk prediction conflicts with high execution risk budget.');
+
+  let finalPolicy: PolicyName = 'explore';
+  let winningSignal: DecisionArbitration['winning_signal'] = 'exploration';
+  let mode: DecisionArbitration['decision_mode'] = 'exploration';
+  let rationale = 'Evidence is insufficient or signals disagree; use bounded exploration.';
+  let confidence = 0.35;
+
+  if (prediction.risk_level === 'high' && selected.risk_budget === 'high') {
+    finalPolicy='reduce_risk'; winningSignal='guardrail'; mode='evidence_led';
+    rationale='High-risk prediction forces risk containment.';
+    confidence=0.9;
+  } else if (adaptiveStrong && adaptive.adjustments.action_bias === 'reduce_risk') {
+    finalPolicy='reduce_risk'; winningSignal='adaptive'; mode='adaptive_led';
+    rationale='High-confidence measured evidence indicates downside containment.';
+    confidence=Math.min(0.9,adaptive.confidence);
+  } else if (adaptiveStrong && adaptive.adjustments.action_bias === 'change') {
+    finalPolicy='change'; winningSignal='adaptive'; mode='adaptive_led';
+    rationale='High-confidence measured evidence indicates the prior direction should change.';
+    confidence=Math.min(0.9,adaptive.confidence);
+  } else if (policyStrong) {
+    finalPolicy=learning.recommended_policy; winningSignal='policy_learning'; mode='evidence_led';
+    rationale='Verified historical policy outcomes meet the arbitration threshold.';
+    confidence=Math.min(0.9,learning.recommendation_confidence);
+  } else if (counterfactualStrong) {
+    finalPolicy=counterfactual.selected_policy; winningSignal='counterfactual'; mode='counterfactual_led';
+    rationale='Bounded scenario comparison provides a meaningful policy separation.';
+    confidence=Math.min(0.9,counterfactual.confidence);
+  } else if (predictionStrong && selected.policy !== 'explore') {
+    finalPolicy=selected.policy; winningSignal='prediction'; mode='evidence_led';
+    rationale='Prediction has sufficient evidence and confidence to preserve the governed policy.';
+    confidence=Math.min(0.9,prediction.confidence);
+  }
+
+  if (evidence === 0) {
+    finalPolicy='explore'; winningSignal='exploration'; mode='exploration';
+    rationale='No measured historical evidence exists; use bounded exploration.';
+    confidence=Math.min(confidence,0.55);
+  }
+
+  return {
+    version:'m9.10',
+    final_policy:finalPolicy,
+    decision_mode:mode,
+    confidence:Number(Math.max(0.25,Math.min(0.9,confidence)).toFixed(3)),
+    conflict_detected:conflicts.length>0,
+    conflicts,
+    winning_signal:winningSignal,
+    rationale,
+    evidence_count:evidence,
+    guardrails:[
+      'Approval remains mandatory before execution.',
+      'Arbitration cannot invent KPI evidence.',
+      'High-risk predictions cannot receive a high execution risk budget.',
+      'Policy learning requires VERIFIED outcomes.',
+      'Counterfactual scenarios are bounded estimates, not causal proof.',
+      'Unresolved conflicts default to exploration.',
+    ],
+    source_refs:[
+      `prediction:evidence=${evidence},confidence=${prediction.confidence}`,
+      `adaptive:applied=${adaptive.applied},confidence=${adaptive.confidence}`,
+      `policy_learning:recommendation=${learning.recommended_policy},confidence=${learning.recommendation_confidence}`,
+      `counterfactual:selected=${counterfactual.selected_policy},delta=${counterfactual.delta_vs_next_best}`,
+      `selected_policy=${selected.policy}`,
+    ],
+  };
+}
+
+function deriveCounterfactualDecision(
   prediction: Prediction,
   adaptive: AdaptiveAdjustment,
   learning: PolicyLearning,
