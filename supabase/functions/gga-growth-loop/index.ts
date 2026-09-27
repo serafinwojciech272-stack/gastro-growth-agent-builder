@@ -32,6 +32,7 @@ type Prediction = {
   historical_success_rate: number | null;
   prediction_method: 'evidence_bounded' | 'ai_plus_history' | 'insufficient_evidence';
 };
+type DecisionPolicy = { version: 'm9.7'; policy: 'retain' | 'change' | 'reduce_risk' | 'explore'; confidence: number; risk_budget: 'low' | 'medium' | 'high'; rationale: string; evidence_count: number; triggers: string[]; guardrails: string[]; };
 type Plan = {
   diagnosis: string;
   root_causes: string[];
@@ -147,6 +148,7 @@ Deno.serve(async (req) => {
 
     const plan = normalizePlan(parseJson(ai.content));
     const prediction = derivePredictiveDecision(learningContext, plan.prediction, plan.mission, adaptiveAdjustment, qualitySafeNumber(ai.usage?.totalTokens));
+    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment);
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
@@ -169,6 +171,7 @@ Deno.serve(async (req) => {
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
       prediction,
+      decision_policy: decisionPolicy,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -185,6 +188,7 @@ Deno.serve(async (req) => {
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
       prediction,
+      decision_policy: decisionPolicy,
     };
     const diagnosisJson = {
       problem,
@@ -393,6 +397,23 @@ function deriveAdaptiveAdjustment(context: Array<Record<string, unknown>>): Adap
   };
 }
 
+function deriveDecisionPolicy(context: Array<Record<string, unknown>>, prediction: Prediction, adaptive: AdaptiveAdjustment): DecisionPolicy {
+  const evidence = prediction.evidence_count;
+  const probability = prediction.probability_of_success;
+  const risk = prediction.risk_level;
+  const verified = context.filter((item) => { const lj = item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {}; return lj.quality === 'VERIFIED'; }).length;
+  let policy: DecisionPolicy['policy'] = 'explore';
+  let rationale = 'Evidence is insufficient for a strong directional policy; gather information with a bounded experiment.';
+  let riskBudget: DecisionPolicy['risk_budget'] = 'low';
+  if (adaptive.applied && adaptive.adjustments.action_bias === 'reduce_risk') { policy='reduce_risk'; rationale='Prior measured evidence indicates that the previous target was missed; reduce execution risk before increasing commitment.'; }
+  else if (adaptive.applied && adaptive.adjustments.action_bias === 'change') { policy='change'; rationale='Prior measured evidence indicates the previous direction underperformed; materially change the action plan.'; riskBudget=risk==='high'?'low':'medium'; }
+  else if (evidence >= 3 && probability >= 0.7 && risk !== 'high') { policy='retain'; rationale='Multiple evidence points support retaining the current direction with controlled execution.'; riskBudget=risk==='medium'?'medium':'high'; }
+  else if (evidence >= 1 && probability < 0.45) { policy='change'; rationale='Available evidence indicates low predicted success; change direction rather than repeat the same approach.'; }
+  const triggers=['evidence_count>=3: '+(evidence>=3),'predicted_success>=0.70: '+(probability>=0.7),'high_risk: '+(risk==='high'),'verified_outcomes: '+verified,'adaptive_applied: '+adaptive.applied];
+  const guardrails=['Approval remains mandatory before execution.','No policy may invent KPI evidence or bypass measurement.','High-risk predictions cannot receive a high execution risk budget.','Explore is the default when evidence is insufficient.'];
+  const confidence=Math.min(0.9,Math.max(0.25,(evidence>=3?0.75:evidence>=1?0.55:0.35)+(probability>=0.7?0.1:0)-(risk==='high'?0.1:0)));
+  return {version:'m9.7',policy,confidence:Number(confidence.toFixed(3)),risk_budget:riskBudget,rationale,evidence_count:evidence,triggers,guardrails};
+}
 function parseJson<T = Record<string, unknown>>(raw: string): T {
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try { return JSON.parse(cleaned) as T; } catch { const start = cleaned.indexOf('{'); const end = cleaned.lastIndexOf('}'); if (start < 0 || end <= start) throw new Error('AI returned invalid structured data'); return JSON.parse(cleaned.slice(start, end + 1)) as T; }
