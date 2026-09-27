@@ -32,7 +32,17 @@ type Prediction = {
   historical_success_rate: number | null;
   prediction_method: 'evidence_bounded' | 'ai_plus_history' | 'insufficient_evidence';
 };
-type DecisionPolicy = { version: 'm9.7'; policy: 'retain' | 'change' | 'reduce_risk' | 'explore'; confidence: number; risk_budget: 'low' | 'medium' | 'high'; rationale: string; evidence_count: number; triggers: string[]; guardrails: string[]; };
+type PolicyName = 'retain' | 'change' | 'reduce_risk' | 'explore';
+type PolicyLearning = {
+  version: 'm9.8';
+  current_policy: PolicyName;
+  recommended_policy: PolicyName;
+  recommendation_confidence: number;
+  evidence_count: number;
+  basis: string[];
+  stats: Record<PolicyName, { uses: number; successes: number; misses: number; success_rate: number | null; avg_confidence: number | null }>;
+};
+type DecisionPolicy = { version: 'm9.7'; policy: PolicyName; confidence: number; risk_budget: 'low' | 'medium' | 'high'; rationale: string; evidence_count: number; triggers: string[]; guardrails: string[]; learning: PolicyLearning; };
 type Plan = {
   diagnosis: string;
   root_causes: string[];
@@ -104,6 +114,7 @@ Deno.serve(async (req) => {
         mission_id: outcome.mission_id,
         mission_title: mission?.mission_json?.title ?? null,
         mission_goal: mission?.mission_json?.goal ?? null,
+        policy: mission?.mission_json?.decision_policy?.policy ?? null,
         status: outcome.status,
         metrics_before: outcome.metrics_before,
         metrics_after: outcome.metrics_after,
@@ -121,6 +132,7 @@ Deno.serve(async (req) => {
 
     // M9.4 Adaptive Decision Loop: derive bounded adjustments from measured learning.
     const adaptiveAdjustment = deriveAdaptiveAdjustment(learningContext);
+    const policyLearning = derivePolicyLearning(learningContext);
 
     if (sourceProjectId) {
       const { data: existing } = await adminClient.from('growth_mission_runs').select('id,business_id,status,engine_version,created_at,diagnosis_json,decision_json,mission_json').eq('business_id', restaurant.business_profile_id).contains('mission_json', { source_project_id: sourceProjectId }).order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -148,7 +160,7 @@ Deno.serve(async (req) => {
 
     const plan = normalizePlan(parseJson(ai.content));
     const prediction = derivePredictiveDecision(learningContext, plan.prediction, plan.mission, adaptiveAdjustment, qualitySafeNumber(ai.usage?.totalTokens));
-    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment);
+    const decisionPolicy = deriveDecisionPolicy(learningContext, prediction, adaptiveAdjustment, policyLearning);
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'prediction', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
 
@@ -397,98 +409,67 @@ function deriveAdaptiveAdjustment(context: Array<Record<string, unknown>>): Adap
   };
 }
 
-function deriveDecisionPolicy(context: Array<Record<string, unknown>>, prediction: Prediction, adaptive: AdaptiveAdjustment): DecisionPolicy {
+function derivePolicyLearning(context: Array<Record<string, unknown>>): PolicyLearning {
+  const policies: PolicyName[] = ['retain', 'change', 'reduce_risk', 'explore'];
+  const stats = Object.fromEntries(policies.map((p) => [p, { uses: 0, successes: 0, misses: 0, success_rate: null, avg_confidence: null }])) as PolicyLearning['stats'];
+  const confidenceBuckets: Record<PolicyName, number[]> = { retain: [], change: [], reduce_risk: [], explore: [] };
+  let evidenceCount = 0;
+  for (const item of context) {
+    const policy = item.policy && typeof item.policy === 'string' ? item.policy as PolicyName : null;
+    if (!policy || !policies.includes(policy)) continue;
+    const lj = item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {};
+    const quality = String(lj.quality ?? '');
+    if (quality !== 'VERIFIED') continue;
+    const s = stats[policy];
+    s.uses += 1;
+    evidenceCount += 1;
+    const status = String(lj.target_status ?? '').toLowerCase();
+    const lesson = String(lj.lesson_type ?? '').toUpperCase();
+    const success = status === 'achieved' || status === 'target_achieved' || lesson === 'TARGET_ACHIEVED' || lesson === 'POSITIVE_DELTA';
+    if (success) s.successes += 1; else s.misses += 1;
+    if (typeof item.confidence === 'number' && Number.isFinite(item.confidence)) confidenceBuckets[policy].push(Math.max(0, Math.min(1, item.confidence)));
+  }
+  for (const policy of policies) {
+    const s = stats[policy];
+    s.success_rate = s.uses ? Number((s.successes / s.uses).toFixed(3)) : null;
+    s.avg_confidence = confidenceBuckets[policy].length ? Number((confidenceBuckets[policy].reduce((a,b)=>a+b,0)/confidenceBuckets[policy].length).toFixed(3)) : null;
+  }
+  const currentPolicy: PolicyName = 'explore';
+  const candidates = policies.filter((p) => stats[p].uses >= 3 && stats[p].success_rate !== null).sort((a,b) => (stats[b].success_rate! - stats[a].success_rate!));
+  const recommendedPolicy = candidates.length ? candidates[0] : currentPolicy;
+  const confidence = candidates.length ? Math.min(0.9, 0.45 + Math.min(0.35, stats[recommendedPolicy].uses * 0.07) + Math.min(0.1, Math.abs((stats[recommendedPolicy].success_rate ?? 0.5) - 0.5) * 0.2)) : 0.25;
+  return {
+    version: 'm9.8',
+    current_policy: currentPolicy,
+    recommended_policy: recommendedPolicy,
+    recommendation_confidence: Number(confidence.toFixed(3)),
+    evidence_count: evidenceCount,
+    basis: candidates.length
+      ? ['Only VERIFIED measured outcomes are used.', 'Minimum 3 verified uses are required before a policy can become the empirical recommendation.', 'Policy recommendation is informational and cannot bypass approval.']
+      : ['Insufficient verified policy-specific evidence; retain governed exploration until at least one policy has 3 verified measured uses.'],
+    stats,
+  };
+}
+
+function deriveDecisionPolicy(context: Array<Record<string, unknown>>, prediction: Prediction, adaptive: AdaptiveAdjustment), learning: PolicyLearning): DecisionPolicy {
   const evidence = prediction.evidence_count;
   const probability = prediction.probability_of_success;
   const risk = prediction.risk_level;
   const verified = context.filter((item) => { const lj = item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {}; return lj.quality === 'VERIFIED'; }).length;
-  let policy: DecisionPolicy['policy'] = 'explore';
+  let policy: PolicyName = 'explore';
   let rationale = 'Evidence is insufficient for a strong directional policy; gather information with a bounded experiment.';
   let riskBudget: DecisionPolicy['risk_budget'] = 'low';
   if (adaptive.applied && adaptive.adjustments.action_bias === 'reduce_risk') { policy='reduce_risk'; rationale='Prior measured evidence indicates that the previous target was missed; reduce execution risk before increasing commitment.'; }
   else if (adaptive.applied && adaptive.adjustments.action_bias === 'change') { policy='change'; rationale='Prior measured evidence indicates the previous direction underperformed; materially change the action plan.'; riskBudget=risk==='high'?'low':'medium'; }
+  else if (learning.recommended_policy !== 'explore' && learning.recommendation_confidence >= 0.6 && risk !== 'high') {
+    policy = learning.recommended_policy;
+    rationale = 'M9.8 policy learning identifies a historically better-performing policy from verified measured outcomes.';
+    riskBudget = policy === 'retain' ? 'medium' : 'low';
+  }
   else if (evidence >= 3 && probability >= 0.7 && risk !== 'high') { policy='retain'; rationale='Multiple evidence points support retaining the current direction with controlled execution.'; riskBudget=risk==='medium'?'medium':'high'; }
   else if (evidence >= 1 && probability < 0.45) { policy='change'; rationale='Available evidence indicates low predicted success; change direction rather than repeat the same approach.'; }
-  const triggers=['evidence_count>=3: '+(evidence>=3),'predicted_success>=0.70: '+(probability>=0.7),'high_risk: '+(risk==='high'),'verified_outcomes: '+verified,'adaptive_applied: '+adaptive.applied];
-  const guardrails=['Approval remains mandatory before execution.','No policy may invent KPI evidence or bypass measurement.','High-risk predictions cannot receive a high execution risk budget.','Explore is the default when evidence is insufficient.'];
+  const triggers=['evidence_count>=3: '+(evidence>=3),'predicted_success>=0.70: '+(probability>=0.7),'high_risk: '+(risk==='high'),'verified_outcomes: '+verified,'adaptive_applied: '+adaptive.applied,'policy_learning_recommendation: '+learning.recommended_policy];
+  const guardrails=['Approval remains mandatory before execution.','No policy may invent KPI evidence or bypass measurement.','High-risk predictions cannot receive a high execution risk budget.','Explore is the default when evidence is insufficient.','Policy learning uses VERIFIED outcomes only and never self-rewards from predictions.'];
   const confidence=Math.min(0.9,Math.max(0.25,(evidence>=3?0.75:evidence>=1?0.55:0.35)+(probability>=0.7?0.1:0)-(risk==='high'?0.1:0)));
-  return {version:'m9.7',policy,confidence:Number(confidence.toFixed(3)),risk_budget:riskBudget,rationale,evidence_count:evidence,triggers,guardrails};
+  return {version:'m9.7',policy,confidence:Number(confidence.toFixed(3)),risk_budget:riskBudget,rationale,evidence_count:evidence,triggers,guardrails,learning};
 }
-function parseJson<T = Record<string, unknown>>(raw: string): T {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  try { return JSON.parse(cleaned) as T; } catch { const start = cleaned.indexOf('{'); const end = cleaned.lastIndexOf('}'); if (start < 0 || end <= start) throw new Error('AI returned invalid structured data'); return JSON.parse(cleaned.slice(start, end + 1)) as T; }
-}
-function normalizePlan(input: Partial<Plan>): Plan {
-  const mission = input.mission ?? {};
-  const rawPrediction = input.prediction ?? {};
-  const actions = Array.isArray(input.actions) ? input.actions : [];
-  const prediction: Prediction = {
-    version: 'm9.6',
-    horizon: String(rawPrediction.horizon || 'not specified').slice(0, 80),
-    predicted_outcome: String(rawPrediction.predicted_outcome || mission.goal || 'Outcome not specified.').slice(0, 500),
-    baseline: numberOrNull(rawPrediction.baseline),
-    target: numberOrNull(rawPrediction.target),
-    expected_value: numberOrNull(rawPrediction.expected_value),
-    unit: rawPrediction.unit == null ? null : String(rawPrediction.unit).slice(0, 40),
-    probability_of_success: clampFloat(rawPrediction.probability_of_success, 0, 1, 0.5),
-    confidence: clampFloat(rawPrediction.confidence, 0, 1, 0.35),
-    risk_level: rawPrediction.risk_level === 'high' || rawPrediction.risk_level === 'medium' ? rawPrediction.risk_level : 'low',
-    key_assumptions: Array.isArray(rawPrediction.key_assumptions) ? rawPrediction.key_assumptions.slice(0,5).map(String) : [],
-    leading_indicators: Array.isArray(rawPrediction.leading_indicators) ? rawPrediction.leading_indicators.slice(0,5).map(String) : [],
-    failure_conditions: Array.isArray(rawPrediction.failure_conditions) ? rawPrediction.failure_conditions.slice(0,5).map(String) : [],
-    evidence_count: 0,
-    historical_success_rate: null,
-    prediction_method: 'insufficient_evidence',
-  };
-  return {
-    diagnosis: String(input.diagnosis || 'No diagnosis returned.').slice(0, 700),
-    root_causes: Array.isArray(input.root_causes) ? input.root_causes.slice(0, 5).map(String) : [],
-    mission: { title: String(mission.title || 'Growth Mission').slice(0, 160), goal: String(mission.goal || 'Improve business growth').slice(0, 500), priority: clamp(mission.priority, 0, 100, 50), target_value: numberOrNull(mission.target_value), baseline_value: numberOrNull(mission.baseline_value), unit: mission.unit == null ? null : String(mission.unit).slice(0, 40) },
-    prediction,
-    actions: actions.slice(0, 5).map((action) => ({ title: String(action?.title || 'Action').slice(0, 180), description: String(action?.description || '').slice(0, 1000), action_type: String(action?.action_type || 'recommendation').slice(0, 60), impact_score: clamp(action?.impact_score, 0, 100, 50), effort_score: clamp(action?.effort_score, 0, 100, 50), risk_level: action?.risk_level === 'high' || action?.risk_level === 'medium' ? action.risk_level : 'low' })),
-  };
-}
-function clampFloat(value: unknown, min: number, max: number, fallback: number): number { const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback; return Math.max(min, Math.min(max, n)); }
-function qualitySafeNumber(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) ? value : 0; }
-function derivePredictiveDecision(
-  context: Array<Record<string, unknown>>,
-  prediction: Prediction,
-  mission: Plan['mission'],
-  adaptive: AdaptiveAdjustment,
-  _tokenCount: number,
-): Prediction {
-  const observed = context
-    .map((item) => item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {})
-    .filter((learning) => learning.quality === 'VERIFIED' && typeof learning.confidence === 'number' || learning.quality === 'VERIFIED');
-  const successful = observed.filter((learning) => {
-    const status = String(learning.target_status ?? '').toLowerCase();
-    const lesson = String(learning.lesson_type ?? '').toUpperCase();
-    return status === 'achieved' || status === 'target_achieved' || lesson === 'TARGET_ACHIEVED' || lesson === 'POSITIVE_DELTA';
-  });
-  const evidenceCount = observed.length;
-  const historicalRate = evidenceCount > 0 ? successful.length / evidenceCount : null;
-  const hasNumericEvidence = prediction.baseline !== null || prediction.target !== null || prediction.expected_value !== null;
-  const evidenceFactor = evidenceCount >= 3 ? 1 : evidenceCount > 0 ? 0.9 : 0.75;
-  const historicalAnchor = historicalRate === null ? prediction.probability_of_success : (prediction.probability_of_success * 0.65) + (historicalRate * 0.35);
-  const probability = Math.max(0.05, Math.min(0.95, historicalAnchor * evidenceFactor));
-  const confidenceCap = evidenceCount >= 3 ? 0.9 : evidenceCount > 0 ? 0.7 : 0.55;
-  const adaptivePenalty = adaptive.applied ? 0.05 : 0;
-  const boundedConfidence = Math.min(prediction.confidence, confidenceCap) - adaptivePenalty;
-  return {
-    ...prediction,
-    version: 'm9.6',
-    baseline: prediction.baseline ?? mission.baseline_value,
-    target: prediction.target ?? mission.target_value,
-    unit: prediction.unit ?? mission.unit,
-    probability_of_success: Number(Math.max(0.05, Math.min(0.95, probability)).toFixed(3)),
-    confidence: Number(Math.max(0.25, boundedConfidence).toFixed(3)),
-    evidence_count: evidenceCount,
-    historical_success_rate: historicalRate === null ? null : Number(historicalRate.toFixed(3)),
-    prediction_method: evidenceCount > 0 ? 'ai_plus_history' : 'insufficient_evidence',
-    risk_level: prediction.risk_level === 'high' || (adaptive.applied && adaptive.adjustments.action_bias === 'reduce_risk') ? 'high' : prediction.risk_level,
-  };
-}
-function numberOrNull(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
-function clamp(value: unknown, min: number, max: number, fallback: number): number { const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : fallback; return Math.max(min, Math.min(max, n)); }
-function priorityFromNumber(value: number): Priority { if (value >= 90) return 'critical'; if (value >= 70) return 'high'; if (value >= 40) return 'medium'; return 'low'; }
-function json(body: unknown, status: number, corsHeaders: Record<string, string>) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
