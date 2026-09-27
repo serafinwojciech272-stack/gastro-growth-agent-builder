@@ -90,10 +90,14 @@ Deno.serve(async (req) => {
         summary: outcome.summary,
         learning: outcome.learning,
         confidence: outcome.confidence,
-        learning_json: outcome.learning_json,
+        learning_json: compactLearningJson(outcome.learning_json),
         updated_at: outcome.updated_at,
       };
     });
+
+    // M9.5 Self-Evaluation: score the intelligence of the previous governed cycle
+    // from observable evidence only. Missing evidence remains unevaluated.
+    const priorSelfEvaluation = deriveSelfEvaluation(learningContext);
 
     // M9.4 Adaptive Decision Loop: derive bounded adjustments from measured learning.
     const adaptiveAdjustment = deriveAdaptiveAdjustment(learningContext);
@@ -118,12 +122,15 @@ Deno.serve(async (req) => {
         website_context: websiteContext,
         learning_context: learningContext,
         adaptive_adjustment: adaptiveAdjustment,
+        self_evaluation: priorSelfEvaluation,
       }),
     });
 
     const plan = normalizePlan(parseJson(ai.content));
     const quality = evaluateStructuredOutput(plan, { required: ['diagnosis', 'root_causes', 'mission', 'actions'], arrays: ['root_causes', 'actions'], minItems: { root_causes: 2, actions: 2 }, maxItems: { root_causes: 5, actions: 5 }, maxStringLength: { diagnosis: 700 } });
     if (quality.score < 75) return json({ error: 'AI plan failed quality gate', quality_score: quality.score }, 422, corsHeaders);
+
+    const selfEvaluation = finalizeSelfEvaluation(priorSelfEvaluation, quality.score, adaptiveAdjustment);
 
     const { data: analysis, error: analysisError } = await adminClient.from('ai_analyses').insert({ restaurant_id: restaurant.id, user_id: user.id, problem, diagnosis: plan.diagnosis, root_causes: plan.root_causes, recommendations: plan.actions, priority: priorityFromNumber(plan.mission.priority) }).select('id,created_at').single();
     if (analysisError) throw analysisError;
@@ -140,6 +147,7 @@ Deno.serve(async (req) => {
       source_project_id: sourceProjectId,
       learning_context: learningContext,
       adaptive_adjustment: adaptiveAdjustment,
+      self_evaluation: selfEvaluation,
     };
     const missionJson = {
       title: plan.mission.title,
@@ -154,6 +162,7 @@ Deno.serve(async (req) => {
       source_project_id: sourceProjectId,
       learning_context: learningContext,
       adaptive_adjustment: adaptiveAdjustment,
+      self_evaluation: selfEvaluation,
     };
     const diagnosisJson = {
       problem,
@@ -166,6 +175,7 @@ Deno.serve(async (req) => {
       source_project_id: sourceProjectId,
       learning_context: learningContext,
       adaptive_adjustment: adaptiveAdjustment,
+      self_evaluation: selfEvaluation,
     };
 
     const { data: mission, error: missionError } = await adminClient.from('growth_mission_runs').insert({
@@ -173,7 +183,7 @@ Deno.serve(async (req) => {
       business_id: restaurant.business_profile_id,
       requested_by_user_id: user.id,
       status: 'awaiting_approval',
-      engine_version: 'growth-loop-v2',
+      engine_version: 'growth-loop-v3',
       diagnosis_json: diagnosisJson,
       decision_json: decision,
       mission_json: missionJson,
@@ -205,6 +215,104 @@ Deno.serve(async (req) => {
   }
 });
 
+type SelfEvaluation = {
+  version: 'm9.5';
+  status: 'complete' | 'partial' | 'insufficient_evidence';
+  intelligence_score: number | null;
+  evidence_coverage: number;
+  dimensions: {
+    diagnosis_quality: number | null;
+    decision_quality: number | null;
+    execution_quality: number | null;
+    measurement_quality: number | null;
+    learning_quality: number | null;
+  };
+  strengths: string[];
+  weaknesses: string[];
+  next_focus: string[];
+  provenance: { source_mission_ids: string[]; basis: string[] };
+  confidence: number;
+};
+
+function compactLearningJson(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const v = value as Record<string, unknown>;
+  return {
+    target_value: typeof v.target_value === 'number' ? v.target_value : null,
+    target_direction: typeof v.target_direction === 'string' ? v.target_direction : null,
+    baseline_value: typeof v.baseline_value === 'number' ? v.baseline_value : null,
+    observed_value: typeof v.observed_value === 'number' ? v.observed_value : null,
+    delta: typeof v.delta === 'number' ? v.delta : null,
+    delta_pct: typeof v.delta_pct === 'number' ? v.delta_pct : null,
+    target_status: typeof v.target_status === 'string' ? v.target_status : null,
+    lesson_type: typeof v.lesson_type === 'string' ? v.lesson_type : null,
+    quality: typeof v.quality === 'string' ? v.quality : null,
+  };
+}
+
+function deriveSelfEvaluation(context: Array<Record<string, unknown>>): SelfEvaluation {
+  const recent = context.slice(0, 5);
+  const ids = recent.map((x) => String(x.mission_id)).filter(Boolean);
+  const executionScores: number[] = [];
+  const measurementScores: number[] = [];
+  const learningScores: number[] = [];
+  for (const item of recent) {
+    const lj = item.learning_json && typeof item.learning_json === 'object' ? item.learning_json as Record<string, unknown> : {};
+    const metricsAfter = item.metrics_after && typeof item.metrics_after === 'object' ? item.metrics_after as Record<string, unknown> : {};
+    if (typeof metricsAfter.completed === 'number' && typeof metricsAfter.action_count === 'number' && metricsAfter.action_count > 0) {
+      executionScores.push(Math.round((metricsAfter.completed / metricsAfter.action_count) * 100));
+    }
+    if (typeof lj.quality === 'string') measurementScores.push(lj.quality === 'VERIFIED' ? 100 : lj.quality === 'PARTIAL' ? 60 : 25);
+    if (typeof item.confidence === 'number') learningScores.push(Math.round(Math.max(0, Math.min(1, item.confidence)) * 100));
+  }
+  const avg=(xs:number[])=>xs.length?Math.round(xs.reduce((a,b)=>a+b,0)/xs.length):null;
+  const dimensions = {
+    diagnosis_quality: null as number|null,
+    decision_quality: null as number|null,
+    execution_quality: avg(executionScores),
+    measurement_quality: avg(measurementScores),
+    learning_quality: avg(learningScores),
+  };
+  const available=[dimensions.execution_quality,dimensions.measurement_quality,dimensions.learning_quality].filter((x):x is number=>x!==null);
+  const score=available.length?Math.round(available.reduce((a,b)=>a+b,0)/available.length):null;
+  const coverage=available.length/5;
+  const strengths:string[]=[];
+  const weaknesses:string[]=[];
+  if ((dimensions.execution_quality??0)>=80) strengths.push('Governed execution completed a high share of recorded actions.');
+  if (dimensions.measurement_quality===100) strengths.push('Outcome measurement has verified KPI evidence.');
+  if ((dimensions.learning_quality??0)>=75) strengths.push('Learning confidence is sufficiently strong for bounded adaptation.');
+  if (dimensions.execution_quality!==null && dimensions.execution_quality<80) weaknesses.push('Execution evidence shows incomplete action completion.');
+  if (dimensions.measurement_quality!==null && dimensions.measurement_quality<100) weaknesses.push('Measurement evidence is partial or unverified.');
+  if (dimensions.learning_quality!==null && dimensions.learning_quality<75) weaknesses.push('Learning confidence is below the adaptive threshold.');
+  const nextFocus:string[]=[];
+  if (dimensions.measurement_quality===null || dimensions.measurement_quality<100) nextFocus.push('Collect verified KPI evidence before stronger adaptation.');
+  if (dimensions.execution_quality===null) nextFocus.push('Record action-level execution telemetry.');
+  if (dimensions.learning_quality===null || dimensions.learning_quality<75) nextFocus.push('Increase evidence quality before changing strategy.');
+  return {
+    version:'m9.5',
+    status:available.length>=3?'complete':available.length>0?'partial':'insufficient_evidence',
+    intelligence_score:score,
+    evidence_coverage:coverage,
+    dimensions,
+    strengths,
+    weaknesses,
+    next_focus:nextFocus,
+    provenance:{source_mission_ids:ids,basis:['growth_outcomes.metrics_after','growth_outcomes.learning_json','growth_outcomes.confidence']},
+    confidence:score===null?0.25:Math.min(0.95,0.45+(coverage*0.5)),
+  };
+}
+
+function finalizeSelfEvaluation(base: SelfEvaluation, diagnosisQuality: number, adaptive: AdaptiveAdjustment): SelfEvaluation {
+  const dimensions={...base.dimensions,diagnosis_quality:Math.round(diagnosisQuality),decision_quality:Math.round((diagnosisQuality + adaptive.confidence*100)/2)};
+  const available=Object.values(dimensions).filter((x):x is number=>typeof x==='number');
+  const score=available.length?Math.round(available.reduce((a,b)=>a+b,0)/available.length):null;
+  const weaknesses=[...base.weaknesses];
+  if (diagnosisQuality<85) weaknesses.push('Current AI diagnosis did not reach the internal 85/100 quality target.');
+  const nextFocus=[...base.next_focus];
+  if (adaptive.applied) nextFocus.push('Validate whether the adaptive adjustment improves the next measured outcome.');
+  return {...base,status:available.length>=5?'complete':'partial',intelligence_score:score,evidence_coverage:available.length/5,dimensions,weaknesses:[...new Set(weaknesses)].slice(0,5),next_focus:[...new Set(nextFocus)].slice(0,5),confidence:Math.min(0.95,Math.max(base.confidence,0.5+available.length*0.1))};
+}
+
 function deriveAdaptiveAdjustment(context: Array<Record<string, unknown>>): AdaptiveAdjustment {
   const verified = context
     .filter((item) => item?.confidence != null && Number(item.confidence) >= 0.75)
@@ -221,11 +329,11 @@ function deriveAdaptiveAdjustment(context: Array<Record<string, unknown>>): Adap
     };
   }
   const learning = latest.learning as Record<string, unknown>;
-  const status = String(learning.target_status ?? '');
-  const lesson = String(learning.lesson_type ?? '');
+  const status = String(learning.target_status ?? '').toLowerCase();
+  const lesson = String(learning.lesson_type ?? '').toUpperCase();
   const direction = String(learning.target_direction ?? '');
   const delta = typeof learning.delta === 'number' && Number.isFinite(learning.delta) ? learning.delta : null;
-  if (status === 'target_achieved' || lesson === 'TARGET_ACHIEVED') {
+  if (status === 'achieved' || status === 'target_achieved' || lesson === 'TARGET_ACHIEVED') {
     return {
       applied: true,
       source_mission_id: String(latest.mission_id),
@@ -234,7 +342,7 @@ function deriveAdaptiveAdjustment(context: Array<Record<string, unknown>>): Adap
       confidence: Math.min(0.95, Number(latest.confidence)),
     };
   }
-  if (status === 'target_missed' || lesson === 'TARGET_MISSED') {
+  if (status === 'not_achieved' || status === 'target_missed' || lesson === 'TARGET_MISSED') {
     const priorityDelta = direction === 'higher_is_better' || direction === 'maximize' ? 5 : 8;
     return {
       applied: true,
