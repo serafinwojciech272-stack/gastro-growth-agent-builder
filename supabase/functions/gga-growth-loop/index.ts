@@ -124,6 +124,46 @@ Deno.serve(async (req) => {
     if (!restaurant) return json({ error: 'Complete business onboarding first.' }, 404, corsHeaders);
     if (!restaurant.business_profile_id) return json({ error: 'Business profile is not initialized. Complete onboarding before creating a mission.' }, 409, corsHeaders);
 
+    // M9.13 Institutional Memory Retrieval: query prior governed decisions before AI planning.
+    const normalizedSignature = problem.toLowerCase().replace(/[^a-z0-9\\s]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 240);
+    const { data: decisionMemoryRows, error: memoryError } = await adminClient
+      .from('growth_decision_memory')
+      .select('mission_id,policy,final_policy,decision_mode,governance_status,trust_score,confidence,evidence_count,problem_signature,decision_summary,rationale,outcome_status,outcome_confidence,learning_summary,memory_json,created_at,updated_at')
+      .eq('business_id', restaurant.business_profile_id)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (memoryError) throw memoryError;
+
+    const institutionalMemory = (decisionMemoryRows ?? [])
+      .map((row) => {
+        const signature = String(row.problem_signature ?? '').toLowerCase();
+        const tokens = normalizedSignature.split(' ').filter((token) => token.length >= 4);
+        const overlap = tokens.length ? tokens.filter((token) => signature.includes(token)).length / tokens.length : 0;
+        const outcomeQuality = row.outcome_status ? (row.outcome_confidence ?? 0) : 0;
+        const relevance = Math.min(1, overlap * 0.65 + Math.min(1, Number(row.trust_score ?? 0) / 100) * 0.2 + outcomeQuality * 0.15);
+        return { ...row, relevance: Number(relevance.toFixed(3)) };
+      })
+      .filter((row) => row.relevance >= 0.18)
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, 8)
+      .map((row) => ({
+        mission_id: row.mission_id,
+        relevance: row.relevance,
+        policy: row.policy,
+        final_policy: row.final_policy,
+        decision_mode: row.decision_mode,
+        governance_status: row.governance_status,
+        trust_score: row.trust_score,
+        confidence: row.confidence,
+        evidence_count: row.evidence_count,
+        decision_summary: row.decision_summary,
+        rationale: row.rationale,
+        outcome_status: row.outcome_status,
+        outcome_confidence: row.outcome_confidence,
+        learning_summary: row.learning_summary,
+        created_at: row.created_at,
+      }));
+
     // M9.3 Learning Loop: retrieve prior measured outcomes for this business before making the next decision.
     const { data: priorMissions, error: priorMissionError } = await adminClient
       .from('growth_mission_runs')
@@ -191,6 +231,7 @@ Deno.serve(async (req) => {
         source_project_id: sourceProjectId,
         website_context: websiteContext,
         learning_context: learningContext,
+        institutional_memory: institutionalMemory,
         adaptive_adjustment: adaptiveAdjustment,
         self_evaluation: priorSelfEvaluation,
       }),
@@ -221,6 +262,7 @@ Deno.serve(async (req) => {
       source,
       source_project_id: sourceProjectId,
       learning_context: learningContext,
+      institutional_memory: institutionalMemory,
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
       prediction,
@@ -241,6 +283,7 @@ Deno.serve(async (req) => {
       source,
       source_project_id: sourceProjectId,
       learning_context: learningContext,
+      institutional_memory: institutionalMemory,
       adaptive_adjustment: adaptiveAdjustment,
       self_evaluation: selfEvaluation,
       prediction,
@@ -271,7 +314,7 @@ Deno.serve(async (req) => {
       business_id: restaurant.business_profile_id,
       requested_by_user_id: user.id,
       status: 'awaiting_approval',
-      engine_version: 'growth-loop-v6',
+      engine_version: 'growth-loop-v7',
       diagnosis_json: diagnosisJson,
       decision_json: decision,
       mission_json: missionJson,
