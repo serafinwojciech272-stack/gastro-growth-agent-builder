@@ -1,19 +1,16 @@
 import { assertAiInput, getAiBudget } from './aiPolicy.ts';
 import { MODEL_REGISTRY } from './modelRegistry.ts';
 
-export type AiTask = 'advisor' | 'menu' | 'reviews' | 'recommendations' | 'general';
+export type AiTask = 'advisor' | 'menu' | 'reviews' | 'recommendations' | 'general' | 'website';
 export type AiCallResult = { model: string; content: string; latencyMs: number; attempts: number; usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } };
 
 const DEFAULTS: Record<AiTask, string> = {
-  advisor: 'deepseek/deepseek-v4-flash:free',
-  menu: 'deepseek/deepseek-v4-flash:free',
-  reviews: 'deepseek/deepseek-v4-flash:free',
-  recommendations: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-  general: 'deepseek/deepseek-v4-flash:free',
+  advisor: 'deepseek/deepseek-v4-flash:free', menu: 'deepseek/deepseek-v4-flash:free', reviews: 'deepseek/deepseek-v4-flash:free',
+  recommendations: 'nvidia/nemotron-3-ultra-550b-a55b:free', general: 'deepseek/deepseek-v4-flash:free', website: 'deepseek/deepseek-v4-flash:free',
 };
 const FALLBACK = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const TIMEOUT_MS = 45_000;
+const TIMEOUT_MS = 120_000;
 const MAX_ATTEMPTS = 2;
 
 export function modelsFor(task: AiTask): string[] {
@@ -35,12 +32,10 @@ export async function callOpenRouter(params: { task: AiTask; system: string; use
   const started = Date.now();
   const models = params.selectedModel ? [params.selectedModel, ...modelsFor(params.task).filter((model) => model !== params.selectedModel)] : modelsFor(params.task);
   if (!models.length) throw new Error(`No enabled registered AI model configured for task: ${params.task}`);
-
   for (let index = 0; index < models.length; index += 1) {
     const model = models[index];
     if (!MODEL_REGISTRY.some((registered) => registered.id === model && registered.enabled)) { lastError = `Model is not enabled in registry: ${model}`; continue; }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
       const response = await fetch(OPENROUTER_URL, { method: 'POST', signal: controller.signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': Deno.env.get('GGA_PUBLIC_URL') || 'https://gastrogrowthadvisor.com', 'X-Title': 'GA Growth Operating System' }, body: JSON.stringify({ model, temperature, max_tokens: budget.maxOutputTokens, messages: [{ role: 'system', content: params.system }, { role: 'user', content: params.user }] }) });
       const payload = await response.json().catch(() => null);
@@ -54,6 +49,5 @@ export async function callOpenRouter(params: { task: AiTask; system: string; use
   }
   throw new Error(lastError);
 }
-
 function numberOrUndefined(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) ? value : undefined; }
 export function parseJson<T = Record<string, unknown>>(raw: string): T { const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim(); try { return JSON.parse(cleaned) as T; } catch { const start = cleaned.indexOf('{'); const end = cleaned.lastIndexOf('}'); if (start < 0 || end <= start) throw new Error('AI returned invalid structured data'); try { return JSON.parse(cleaned.slice(start, end + 1)) as T; } catch { throw new Error('AI returned invalid structured data'); } } }
