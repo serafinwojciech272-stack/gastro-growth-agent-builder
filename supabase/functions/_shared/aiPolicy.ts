@@ -10,6 +10,7 @@ export const AI_BUDGETS: Record<string, AiBudget> = {
   reviews: { maxInputChars: 30000, maxOutputTokens: 2400, maxTemperature: 0.5 },
   recommendations: { maxInputChars: 24000, maxOutputTokens: 2200, maxTemperature: 0.6 },
   general: { maxInputChars: 24000, maxOutputTokens: 2200, maxTemperature: 0.7 },
+  website: { maxInputChars: 60000, maxOutputTokens: 12000, maxTemperature: 0.35 },
 };
 
 export function getAiBudget(task: string): AiBudget {
