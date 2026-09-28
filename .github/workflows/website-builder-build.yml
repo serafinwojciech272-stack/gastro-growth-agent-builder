@@ -2,19 +2,11 @@ name: Website Builder Sandbox Build
 on:
   workflow_dispatch:
     inputs:
-      project_id:
-        description: Generated website project id
-        required: true
-        type: string
-      callback_url:
-        description: Supabase executor callback endpoint
-        required: true
-        type: string
-      build_ref:
-        description: Git ref to build
-        required: true
-        default: main
-        type: string
+      project_id: {description: Generated website project id, required: true, type: string}
+      job_id: {description: Build job id, required: true, type: string}
+      callback_url: {description: Supabase executor callback endpoint, required: true, type: string}
+      callback_token: {description: One-time build callback token, required: true, type: string}
+      build_ref: {description: Git ref to build, required: true, default: main, type: string}
 permissions:
   contents: read
 jobs:
@@ -24,28 +16,32 @@ jobs:
     steps:
       - name: Checkout generated repository
         uses: actions/checkout@v4
-        with:
-          ref: \${{ inputs.build_ref }}
+        with: {ref: ${{ inputs.build_ref }}}
       - name: Setup Node
         uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+        with: {node-version: 22, cache: npm}
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        id: install
+        continue-on-error: true
+        run: npm ci --ignore-scripts 2>&1 | tee /tmp/install.log
       - name: Build
         id: build
+        if: steps.install.outcome == 'success'
         continue-on-error: true
-        run: npm run build
+        run: npm run build 2>&1 | tee /tmp/build.log
       - name: Collect build result
         if: always()
         env:
-          PROJECT_ID: \${{ inputs.project_id }}
-          CALLBACK_URL: \${{ inputs.callback_url }}
-          BUILD_OUTCOME: \${{ steps.build.outcome }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          JOB_ID: ${{ inputs.job_id }}
+          CALLBACK_URL: ${{ inputs.callback_url }}
+          CALLBACK_TOKEN: ${{ inputs.callback_token }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$BUILD_OUTCOME" = "success" ]; then STATUS=verified; else STATUS=failed; fi
-          curl --fail-with-body --max-time 20 -X POST "$CALLBACK_URL" \
-            -H "Content-Type: application/json" \
-            -H "X-Website-Builder-Executor: github-actions" \
-            --data "{\"project_id\":\"$PROJECT_ID\",\"status\":\"$STATUS\"}"
+          if [ "$INSTALL_OUTCOME" = "success" ] && [ "$BUILD_OUTCOME" = "success" ]; then STATUS=verified; else STATUS=failed; fi
+          LOG="$(cat /tmp/install.log /tmp/build.log 2>/dev/null | tail -n 220)"
+          jq -n --arg project_id "$PROJECT_ID" --arg job_id "$JOB_ID" --arg callback_token "$CALLBACK_TOKEN" --arg status "$STATUS" --arg build_log "$LOG" --arg run_id "$RUN_ID" --arg run_url "$RUN_URL" '{mode:"callback",project_id:$project_id,job_id:$job_id,callback_token:$callback_token,status:$status,build_log:$build_log,run_id:$run_id,run_url:$run_url}' > /tmp/callback.json
+          curl --fail-with-body --max-time 20 -X POST "$CALLBACK_URL" -H "Content-Type: application/json" --data-binary @/tmp/callback.json
