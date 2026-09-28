@@ -1,98 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { callOpenRouter, parseJson } from '../_shared/ai.ts';
-import { getCorsHeaders } from '../_shared/cors.ts';
-import { evaluateStructuredOutput } from '../_shared/quality.ts';
-
-type GeneratedFile = { path: string; content: string };
-type GeneratedSite = { schemaVersion: '2.0'; projectName: string; stack: string; description: string; files: GeneratedFile[]; previewHtml: string; designTokens: Record<string, unknown>; buildNotes: string[] };
-
-Deno.serve(async (req) => {
-  const cors = getCorsHeaders(req);
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
-  try {
-    const auth = req.headers.get('Authorization');
-    if (!auth?.startsWith('Bearer ')) return json({ error: 'Authentication required' }, 401, cors);
-    const url = Deno.env.get('SUPABASE_URL'); const anon = Deno.env.get('SUPABASE_ANON_KEY');
-    if (!url || !anon) throw new Error('Supabase environment is incomplete');
-    const sb = createClient(url, anon, { global: { headers: { Authorization: auth } } });
-    const { data: authData } = await sb.auth.getUser();
-    if (!authData.user) return json({ error: 'Invalid session' }, 401, cors);
-    const body = await req.json().catch(() => null);
-    const prompt = typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 50000) : '';
-    if (prompt.length < 30) return json({ error: 'Prompt must contain at least 30 characters.' }, 400, cors);
-    const requestedName = typeof body?.name === 'string' ? body.name.trim().slice(0, 120) : '';
-    const system = `You are the production Website Builder Compiler inside a universal AI operating system. Convert a natural-language website brief into a complete, runnable website repository specification and a self-contained browser preview.
-
-Your output MUST be JSON only. Do not output markdown. Do not output explanations outside JSON.
-
-Return exactly this shape:
-{schemaVersion:'2.0',projectName:string,stack:'react-vite'|'static-html',description:string,files:[{path:string,content:string}],previewHtml:string,designTokens:object,buildNotes:string[]}
-
-Repository rules:
-1. Prefer a small production-ready React + Vite TypeScript stack unless the prompt clearly requires static HTML. For react-vite include package.json, index.html, src/main.tsx, src/App.tsx and src/index.css. Add additional components/data files when useful.
-2. Every referenced import must exist in files[]. Do not use external local files that are not included.
-3. Keep dependencies minimal and mainstream. Use CSS for the visual system. Do not require an unavailable backend.
-4. The generated code must be syntactically coherent and runnable with npm install && npm run build.
-5. Generate responsive desktop/tablet/mobile behavior.
-6. Implement the requested color palette, typography, spacing, visual hierarchy, components, interactions and content. Use accessible semantic HTML, keyboard focus, sufficient contrast, alt text and reduced-motion handling.
-7. Never fabricate real business claims, certifications, testimonials, prices, addresses or statistics unless the user supplied them. Mark placeholders clearly.
-8. The previewHtml MUST be self-contained HTML with inline CSS and inline JavaScript where needed. It must render the same core visual concept without a build step. Do not reference local files or inaccessible modules from previewHtml.
-9. Do not include secrets, API keys, tracking IDs or credentials.
-10. Avoid dangerous browser APIs, eval, Function constructors and arbitrary script injection.
-11. File paths must be relative, normalized and safe. No '..', no absolute paths.
-12. Keep total generated file content within a practical production MVP size. Favor quality over excessive boilerplate.
-
-The user prompt is the source of truth for design intent. Resolve reasonable implementation details yourself. Produce a real site, not a wireframe. Use polished visual hierarchy and strong UX.`;
-    const ai = await callOpenRouter({ task: 'website', system, user: JSON.stringify({ requestedName, prompt }), temperature: 0.3 });
-    const raw = parseJson<Record<string, unknown>>(ai.content);
-    const site = normalizeSite(raw);
-    const quality = evaluateStructuredOutput(site, { required: ['schemaVersion','projectName','stack','description','files','previewHtml','designTokens','buildNotes'], arrays: ['files','buildNotes'], minItems: { files: 4 } });
-    if (quality.score < 85) throw new Error(`Website generation quality gate failed: ${quality.score}`);
-    const organization = await sb.from('organization_members').select('organization_id').eq('user_id', authData.user.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
-    if (organization.error) throw organization.error;
-    if (!organization.data?.organization_id) return json({ error: 'No organization membership found for this account.' }, 403, cors);
-    const slug = slugify(site.projectName) || `ai-site-${Date.now()}`;
-    const projectInsert = await sb.from('website_builder_projects').insert({ organization_id: organization.data.organization_id, user_id: authData.user.id, name: site.projectName, source_url: `https://generated.local/${slug}`, vertical: 'AI Website', goal: prompt.slice(0, 1000), status: 'generated', active_stage: 8, completed_stages: [0,1,2,3,4,5,6,7,8], artifacts: { 'AI Site Generation': site, 'Prompt': { text: prompt, createdAt: new Date().toISOString() } }, source_snapshot: { type: 'prompt', prompt }, version: 1 }).select('*').single();
-    if (projectInsert.error) throw projectInsert.error;
-    const repo = await publishToGitHub(site, slug);
-    return json({ project: projectInsert.data, site, quality, ai: { model: ai.model, latencyMs: ai.latencyMs, attempts: ai.attempts, usage: ai.usage }, repository: repo, next: 'preview' }, 200, cors);
-  } catch (error) {
-    console.error('GGA Website Builder Agent error', error);
-    return json({ error: error instanceof Error ? error.message : 'Website generation failed.' }, 502, cors);
-  }
-});
-
-function normalizeSite(value: Record<string, unknown>): GeneratedSite {
-  const rawFiles = Array.isArray(value.files) ? value.files : [];
-  const files = rawFiles.map((item) => {
-    const row = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-    return { path: safePath(typeof row.path === 'string' ? row.path : ''), content: typeof row.content === 'string' ? row.content.slice(0, 60000) : '' };
-  }).filter((file) => file.path && file.content).slice(0, 30);
-  const previewHtml = typeof value.previewHtml === 'string' ? sanitizePreview(value.previewHtml.slice(0, 100000)) : '';
-  return { schemaVersion: '2.0', projectName: text(value.projectName, 'AI Website', 120), stack: value.stack === 'static-html' ? 'static-html' : 'react-vite', description: text(value.description, 'Generated production website.', 500), files, previewHtml, designTokens: isRecord(value.designTokens) ? value.designTokens : {}, buildNotes: list(value.buildNotes, 20) };
-}
-function safePath(path: string) { const p = path.trim().replace(/\\/g, '/').replace(/^\/+/, ''); return p.includes('..') || p.includes('\0') ? '' : p.slice(0, 240); }
-function sanitizePreview(html: string) { return html.replace(/<iframe[\s\S]*?<\/iframe>/gi, '').replace(/<object[\s\S]*?<\/object>/gi, '').replace(/<embed[^>]*>/gi, '').replace(/<script[^>]*src=[^>]*>[\s\S]*?<\/script>/gi, ''); }
-function text(value: unknown, fallback: string, max: number) { return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : fallback; }
-function list(value: unknown, max: number) { return Array.isArray(value) ? value.slice(0, max).map((x) => typeof x === 'string' ? x.slice(0, 500) : JSON.stringify(x)).filter(Boolean) : []; }
-function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
-function slugify(value: string) { return value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48); }
-
-async function publishToGitHub(site: GeneratedSite, slug: string) {
-  const token = Deno.env.get('GITHUB_TOKEN');
-  const owner = Deno.env.get('GITHUB_REPO_OWNER');
-  if (!token || !owner) return { status: 'not_configured', message: 'GITHUB_TOKEN and GITHUB_REPO_OWNER are required for automatic repository creation.' };
-  const repoName = slug || `ai-website-${Date.now()}`;
-  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28' };
-  const create = await fetch('https://api.github.com/user/repos', { method: 'POST', headers, body: JSON.stringify({ name: repoName, description: site.description.slice(0, 350), private: false, auto_init: true }) });
-  if (!create.ok) { const detail = await create.text(); return { status: 'failed', message: `GitHub repository creation failed (${create.status}).`, detail: detail.slice(0, 500) }; }
-  const created = await create.json();
-  for (const file of site.files) {
-    const content = btoa(unescape(encodeURIComponent(file.content)));
-    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/contents/${file.path}`, { method: 'PUT', headers, body: JSON.stringify({ message: `feat: generate ${file.path}`, content }) });
-    if (!response.ok) return { status: 'partial', repository: created.html_url, message: `Repository created but file upload failed for ${file.path}.` };
-  }
-  return { status: 'created', repository: created.html_url, cloneUrl: created.clone_url, name: repoName };
-}
-function json(body: unknown, status: number, cors: Record<string, string>) { return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } }); }
+import { callOpenRouter, parseJson } from './_shared/ai.ts';
+import { getCorsHeaders } from './_shared/cors.ts';
+import { evaluateStructuredOutput } from './_shared/quality.ts';
+type GeneratedFile={path:string;content:string}; type GeneratedSite={schemaVersion:'2.0';projectName:string;stack:string;description:string;files:GeneratedFile[];previewHtml:string;designTokens:Record<string,unknown>;buildNotes:string[]};
+Deno.serve(async(req)=>{const cors=getCorsHeaders(req);if(req.method==='OPTIONS')return new Response('ok',{headers:cors});if(req.method!=='POST')return json({error:'Method not allowed'},405,cors);try{const auth=req.headers.get('Authorization');if(!auth?.startsWith('Bearer '))return json({error:'Authentication required'},401,cors);const url=Deno.env.get('SUPABASE_URL');const anon=Deno.env.get('SUPABASE_ANON_KEY');if(!url||!anon)throw new Error('Supabase environment is incomplete');const sb=createClient(url,anon,{global:{headers:{Authorization:auth}}});const{data:authData}=await sb.auth.getUser();if(!authData.user)return json({error:'Invalid session'},401,cors);const body=await req.json().catch(()=>null);const prompt=typeof body?.prompt==='string'?body.prompt.trim().slice(0,50000):'';if(prompt.length<30)return json({error:'Prompt must contain at least 30 characters.'},400,cors);const requestedName=typeof body?.name==='string'?body.name.trim().slice(0,120):'';const system=`You are the production Website Builder Compiler. Convert a natural-language website brief into a complete runnable repository specification and self-contained browser preview. Output JSON only with {schemaVersion,projectName,stack,description,files:[{path,content}],previewHtml,designTokens,buildNotes}. Prefer React+Vite TypeScript unless static HTML is clearly better. For react-vite include package.json,index.html,src/main.tsx,src/App.tsx,src/index.css. Every import must exist. npm install && npm run build must work. Build real responsive UI, not a wireframe. Implement requested colors, typography, components, interactions and content. Use semantic accessible HTML, focus states, contrast and reduced motion. Do not invent real claims, prices, addresses, testimonials or statistics. Mark placeholders. previewHtml must be self-contained and visually match the site. No secrets, eval, Function constructors, iframe/object/embed or arbitrary external scripts. Paths must be relative and must not contain '..'. Keep dependencies minimal and output practical. The prompt is the source of truth.`;const ai=await callOpenRouter({task:'website',system,user:JSON.stringify({requestedName,prompt}),temperature:0.3});const raw=parseJson<Record<string,unknown>>(ai.content);const site=normalizeSite(raw);const quality=evaluateStructuredOutput(site,{required:['schemaVersion','projectName','stack','description','files','previewHtml','designTokens','buildNotes'],arrays:['files','buildNotes'],minItems:{files:4}});if(quality.score<85)throw new Error(`Website generation quality gate failed: ${quality.score}`);const organization=await sb.from('organization_members').select('organization_id').eq('user_id',authData.user.id).order('created_at',{ascending:true}).limit(1).maybeSingle();if(organization.error)throw organization.error;if(!organization.data?.organization_id)return json({error:'No organization membership found for this account.'},403,cors);const slug=slugify(site.projectName)||`ai-site-${Date.now()}`;const projectInsert=await sb.from('website_builder_projects').insert({organization_id:organization.data.organization_id,user_id:authData.user.id,name:site.projectName,source_url:`https://generated.local/${slug}`,vertical:'AI Website',goal:prompt.slice(0,1000),status:'generated',active_stage:8,completed_stages:[0,1,2,3,4,5,6,7,8],artifacts:{'AI Site Generation':site,'Prompt':{text:prompt,createdAt:new Date().toISOString()}},source_snapshot:{type:'prompt',prompt},version:1}).select('*').single();if(projectInsert.error)throw projectInsert.error;const repo=await publishToGitHub(site,slug);return json({project:projectInsert.data,site,quality,ai:{model:ai.model,latencyMs:ai.latencyMs,attempts:ai.attempts,usage:ai.usage},repository:repo,next:'preview'},200,cors)}catch(error){console.error('GGA Website Builder Agent error',error);return json({error:error instanceof Error?error.message:'Website generation failed.'},502,cors)}});
+function normalizeSite(value:Record<string,unknown>):GeneratedSite{const rawFiles=Array.isArray(value.files)?value.files:[];const files=rawFiles.map(item=>{const row=item&&typeof item==='object'?item as Record<string,unknown>:{};return{path:safePath(typeof row.path==='string'?row.path:''),content:typeof row.content==='string'?row.content.slice(0,60000):''}}).filter(file=>file.path&&file.content).slice(0,30);const previewHtml=typeof value.previewHtml==='string'?sanitizePreview(value.previewHtml.slice(0,100000)):'';return{schemaVersion:'2.0',projectName:text(value.projectName,'AI Website',120),stack:value.stack==='static-html'?'static-html':'react-vite',description:text(value.description,'Generated production website.',500),files,previewHtml,designTokens:isRecord(value.designTokens)?value.designTokens:{},buildNotes:list(value.buildNotes,20)}}
+function safePath(path:string){const p=path.trim().replace(/\\/g,'/').replace(/^\/+/, '');return p.includes('..')||p.includes('\0')?'':p.slice(0,240)} function sanitizePreview(html:string){return html.replace(/<iframe[\s\S]*?<\/iframe>/gi,'').replace(/<object[\s\S]*?<\/object>/gi,'').replace(/<embed[^>]*>/gi,'').replace(/<script[^>]*src=[^>]*>[\s\S]*?<\/script>/gi,'')} function text(value:unknown,fallback:string,max:number){return typeof value==='string'&&value.trim()?value.trim().slice(0,max):fallback} function list(value:unknown,max:number){return Array.isArray(value)?value.slice(0,max).map(x=>typeof x==='string'?x.slice(0,500):JSON.stringify(x)).filter(Boolean):[]} function isRecord(value:unknown):value is Record<string,unknown>{return Boolean(value&&typeof value==='object'&&!Array.isArray(value))} function slugify(value:string){return value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48)}
+async function publishToGitHub(site:GeneratedSite,slug:string){const token=Deno.env.get('GITHUB_TOKEN');const owner=Deno.env.get('GITHUB_REPO_OWNER');if(!token||!owner)return{status:'not_configured',message:'GITHUB_TOKEN and GITHUB_REPO_OWNER are required for automatic repository creation.'};const repoName=slug||`ai-website-${Date.now()}`;const headers={Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'};const create=await fetch('https://api.github.com/user/repos',{method:'POST',headers,body:JSON.stringify({name:repoName,description:site.description.slice(0,350),private:false,auto_init:true})});if(!create.ok)return{status:'failed',message:`GitHub repository creation failed (${create.status}).`};const created=await create.json();for(const file of site.files){const content=btoa(unescape(encodeURIComponent(file.content)));const response=await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/contents/${file.path}`,{method:'PUT',headers,body:JSON.stringify({message:`feat: generate ${file.path}`,content})});if(!response.ok)return{status:'partial',repository:created.html_url,message:`Repository created but file upload failed for ${file.path}.`}}return{status:'created',repository:created.html_url,cloneUrl:created.clone_url,name:repoName}}
+function json(body:unknown,status:number,cors:Record<string,string>){return new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}})}
