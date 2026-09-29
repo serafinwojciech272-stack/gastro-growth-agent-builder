@@ -1,0 +1,29 @@
+export type CoreEngineContext = {
+  ok: boolean;
+  source: string;
+  version?: string;
+  capabilities?: string[];
+  capabilityPacks?: Array<{id:string;name:string;category:string;version:string;capabilities:string[];actions:Array<{id:string;name:string;risk:string;requiresApproval:boolean}>}>;
+  readiness?: unknown;
+  fetchedAt: string;
+};
+
+export async function getCoreEngineContext(): Promise<CoreEngineContext> {
+  const base = Deno.env.get('CORE_ENGINE_URL')?.replace(/\/$/, '');
+  const fallback: CoreEngineContext = { ok:false, source:'unconfigured', fetchedAt:new Date().toISOString() };
+  if (!base) return fallback;
+  try {
+    const response = await fetch(`${base}/api/engine`, { headers:{ Accept:'application/json' }, signal:AbortSignal.timeout(5000) });
+    if (!response.ok) return { ...fallback, source:`http_${response.status}` };
+    const data = await response.json() as Record<string,unknown>;
+    return {
+      ok:true,
+      source:base,
+      version:typeof data.version==='string'?data.version:undefined,
+      capabilities:Array.isArray(data.capabilities)?data.capabilities.filter((x):x is string=>typeof x==='string'):[],
+      capabilityPacks:Array.isArray(data.capabilityPacks)?data.capabilityPacks as CoreEngineContext['capabilityPacks']:[],
+      readiness:data.readiness,
+      fetchedAt:new Date().toISOString()
+    };
+  } catch { return { ...fallback, source:'unavailable' }; }
+}
