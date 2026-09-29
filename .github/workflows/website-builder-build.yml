@@ -19,15 +19,23 @@ jobs:
         with: {ref: ${{ inputs.build_ref }}}
       - name: Setup Node
         uses: actions/setup-node@v4
-        with: {node-version: 22, cache: npm}
+        with: {node-version: 22}
       - name: Install dependencies
         id: install
         continue-on-error: true
-        run: npm ci --ignore-scripts 2>&1 | tee /tmp/install.log
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci --ignore-scripts 2>&1 | tee /tmp/install.log
+          else
+            npm install --ignore-scripts 2>&1 | tee /tmp/install.log
+          fi
       - name: Build
         id: build
         if: steps.install.outcome == 'success'
         continue-on-error: true
+        shell: bash
         run: npm run build 2>&1 | tee /tmp/build.log
       - name: Collect build result
         if: always()
