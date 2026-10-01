@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "test:e2e:website-builder:m7": "node scripts/e2e/website-builder-m7.mjs",
     "test:e2e:website-builder:m7.2": "node scripts/e2e/website-builder-m7-2.mjs",
-    "test:e2e:website-builder:m7.3": "node scripts/e2e/website-builder-m7-3.mjs"
+    "test:e2e:website-builder:m7.3": "node scripts/e2e/website-builder-m7-3.mjs",
+    "test:e2e:website-builder:m7.4": "node scripts/e2e/website-builder-m7-3.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
